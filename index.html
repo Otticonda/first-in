@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>First In</title>
+<meta name="theme-color" content="#06080B">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: HUD-style console. Sticky status bar, three tabs (Scan / Repeaters / Watch).
+   Scan results are one collapsible block per CA with a card per early wallet. Single dark theme by design. */
+:root{
+  --bg:#06080B; --grid:rgba(80,190,255,.045); --panel:#0A0F15; --panel2:#0E151E; --line:#18232F; --line2:#22323F;
+  --fg:#D5E1EC; --muted:#7A8DA0; --dim:#4C5D6E;
+  --cy:#3FD8FF; --cy-soft:rgba(63,216,255,.11);
+  --amb:#FFB547; --amb-soft:rgba(255,181,71,.12);
+  --up:#36EE8A; --up-soft:rgba(54,238,138,.11);
+  --dn:#FF5C6C; --dn-soft:rgba(255,92,108,.12);
+  --vio:#B592FF; --vio-soft:rgba(181,146,255,.14);
+  --f-display:"Chakra Petch","JetBrains Mono",ui-monospace,monospace;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background-color:var(--bg);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:28px 28px;color:var(--fg);font:13px/1.5 var(--f-mono);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:20;background:var(--bg)}
+[hidden]{display:none!important}
+a{color:var(--cy);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));padding-block:0 60px;display:flex;flex-direction:column;gap:16px}
+
+/* status bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:rgba(6,8,11,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.bar-in{max-width:820px;margin:0 auto;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));padding-block:10px;display:flex;align-items:center;gap:12px}
+.brand{font:700 20px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase}
+.brand i{font-style:normal;color:var(--cy)}
+.spacer{flex:1}
+.status{display:flex;align-items:center;gap:7px;font-size:10.5px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;font-variant-numeric:tabular-nums}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none}
+.dot.on{background:var(--up);box-shadow:0 0 0 0 rgba(54,238,138,.6);animation:ping 2s infinite}
+.dot.err{background:var(--dn)}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(54,238,138,.55)}70%{box-shadow:0 0 0 7px rgba(54,238,138,0)}100%{box-shadow:0 0 0 0 rgba(54,238,138,0)}}
+.gear{background:none;border:1px solid var(--line2);color:var(--muted);padding:6px 9px;border-radius:3px;cursor:pointer;font:12px var(--f-mono)}
+
+/* hero */
+.hero{padding-top:22px;display:flex;flex-direction:column;gap:8px}
+.kicker{font-size:10.5px;letter-spacing:.18em;color:var(--cy);text-transform:uppercase}
+.hero h1{margin:0;font:700 clamp(26px,7vw,40px)/1.02 var(--f-display);letter-spacing:.01em;text-transform:uppercase;text-wrap:balance}
+.hero h1 span{color:var(--cy)}
+.hero p{margin:0;color:var(--muted);max-width:62ch}
+
+/* panels with HUD corners */
+.panel{position:relative;background:var(--panel);border:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:12px}
+.panel::before,.panel::after{content:"";position:absolute;width:10px;height:10px;border-color:var(--cy);border-style:solid;pointer-events:none}
+.panel::before{top:-1px;left:-1px;border-width:1px 0 0 1px}
+.panel::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+.ph{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ph h2{margin:0;font:700 14px/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase}
+.ph .tagline{font-size:10.5px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+
+label.lb{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+textarea,input{width:100%;font:13px/1.45 var(--f-mono);color:var(--fg);background:#05080C;border:1px solid var(--line2);border-radius:2px;padding:10px 12px}
+textarea{min-height:120px;resize:vertical;caret-color:var(--cy)}
+textarea::placeholder,input::placeholder{color:var(--dim)}
+input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible,a:focus-visible{outline:1px solid var(--cy);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row > *{min-width:0}
+button{font:700 12px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--fg);background:var(--panel2);border:1px solid var(--line2);border-radius:2px;padding:11px 14px;cursor:pointer}
+button:hover{border-color:var(--cy);color:var(--cy)}
+button:disabled{opacity:.45;cursor:default}
+button.go{background:var(--cy);border-color:var(--cy);color:#00141B}
+button.go:hover{background:#7BE6FF;color:#00141B}
+button.sm{padding:7px 10px;font-size:10.5px}
+.hint{margin:0;color:var(--dim);font-size:11.5px}
+
+/* terminal log */
+.log{background:#03060A;border:1px solid var(--line);padding:10px 12px;font-size:11.5px;line-height:1.65;color:var(--muted);max-height:190px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.log div::before{content:"› ";color:var(--dim)}
+.log .ok{color:var(--up)} .log .er{color:var(--dn)} .log .wn{color:var(--amb)}
+.log .cur::after{content:"▍";color:var(--cy);animation:blink 1s steps(1) infinite;margin-left:2px}
+@keyframes blink{50%{opacity:0}}
+
+/* tabs */
+.tabs{display:flex;border:1px solid var(--line);background:var(--panel)}
+.tabs button{flex:1;border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);padding:12px 6px;font-size:11px;display:flex;gap:6px;align-items:center;justify-content:center}
+.tabs button:last-child{border-right:0}
+.tabs button[aria-selected="true"]{color:var(--cy);background:var(--cy-soft);box-shadow:inset 0 -2px 0 var(--cy)}
+.n{font-variant-numeric:tabular-nums}
+.badge{font-size:10px;padding:2px 5px;border:1px solid currentColor;border-radius:2px;opacity:.85}
+
+/* filter bar */
+.fbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.fbar button{padding:7px 10px;font-size:10.5px;color:var(--muted)}
+.fbar button[aria-pressed="true"]{color:#00141B;background:var(--cy);border-color:var(--cy)}
+.fbar .sep{width:1px;height:20px;background:var(--line2);margin:0 4px}
+
+/* coin block */
+.coin{background:var(--panel);border:1px solid var(--line)}
+.coin > summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid transparent}
+.coin[open] > summary{border-bottom-color:var(--line)}
+.coin > summary::-webkit-details-marker{display:none}
+.ch{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.tick{font:700 22px/1 var(--f-display);letter-spacing:.04em;color:var(--fg)}
+.cname{color:var(--muted);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw}
+.chev{margin-left:auto;color:var(--dim);font-size:11px;letter-spacing:.1em}
+.coin[open] .chev .c{display:inline-block;transform:rotate(90deg)}
+.net{font:700 15px/1 var(--f-mono)}
+.ca{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}
+.ca code{font-family:var(--f-mono);color:var(--fg);background:#05080C;border:1px solid var(--line);padding:3px 6px;border-radius:2px}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.kpis .kpi:last-child:nth-child(odd){grid-column:1/-1}
+@media (min-width:620px){.kpis{grid-template-columns:repeat(5,minmax(0,1fr))}.kpis .kpi:last-child:nth-child(odd){grid-column:auto}}
+.kpi{background:var(--panel2);padding:8px 10px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.kpi span{font-size:9.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+.kpi b{font:700 15px/1.1 var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meter{height:4px;background:var(--dn-soft);display:flex;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--up)}
+
+/* wallet card */
+.w{display:grid;grid-template-columns:1fr auto;gap:10px 12px;padding:14px 16px;border-top:1px solid var(--line)}
+.w:first-child{border-top:0}
+.wid{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.rank{font:700 12px/1 var(--f-mono);color:var(--cy);background:var(--cy-soft);padding:4px 6px;border-radius:2px;font-variant-numeric:tabular-nums}
+.addr{font:700 13.5px/1 var(--f-mono);letter-spacing:.02em}
+.lbl{color:var(--vio);font-weight:700}
+.pnl{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.pnl b{font:700 16px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.pnl small{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.up{color:var(--up)} .dn{color:var(--dn)} .flat{color:var(--muted)}
+.tags{display:flex;gap:5px;flex-wrap:wrap;grid-column:1/-1}
+.t{font:700 9.5px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;padding:4px 6px;border-radius:2px;border:1px solid currentColor;white-space:nowrap}
+.t.win{color:var(--up);background:var(--up-soft)}
+.t.loss{color:var(--dn);background:var(--dn-soft)}
+.t.dia{color:var(--cy);background:var(--cy-soft)}
+.t.sold{color:var(--fg);background:rgba(255,255,255,.04)}
+.t.part{color:var(--amb);background:var(--amb-soft)}
+.t.moved{color:var(--vio);background:var(--vio-soft)}
+.t.snipe{color:var(--amb);background:transparent;border-style:dashed}
+.t.dev{color:var(--dn);background:transparent;border-style:dashed}
+.t.smart{color:#0B0613;background:var(--vio);border-color:var(--vio)}
+.t.early{color:var(--cy);background:transparent}
+.t.warn{color:var(--muted);background:transparent;border-style:dotted}
+.stats{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.st{background:#070B10;padding:7px 9px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.st span{font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim)}
+.st b{font-weight:500;font-size:12.5px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+@media (min-width:620px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.acts{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+.acts a,.acts button{font:700 10px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;padding:7px 9px;border:1px solid var(--line2);border-radius:2px;color:var(--muted);background:transparent}
+.acts a:hover{color:var(--cy);border-color:var(--cy);text-decoration:none}
+.acts .star[aria-pressed="true"]{color:#00141B;background:var(--cy);border-color:var(--cy)}
+.more{padding:12px 16px;border-top:1px solid var(--line);text-align:center}
+
+.empty{border:1px dashed var(--line2);padding:18px;color:var(--muted);display:flex;flex-direction:column;gap:8px;background:rgba(10,15,21,.6)}
+.empty b{color:var(--fg);font-family:var(--f-display);letter-spacing:.06em;text-transform:uppercase}
+.ex{font:700 9.5px/1 var(--f-mono);letter-spacing:.16em;color:#1A1200;background:var(--amb);padding:4px 7px;align-self:flex-start}
+.err{border:1px solid var(--dn);background:var(--dn-soft);color:var(--dn);padding:10px 12px;font-size:12px}
+.alert{border:1px solid var(--vio);background:var(--vio-soft);padding:14px;display:flex;flex-direction:column;gap:10px}
+.alert h3{margin:0;font:700 13px/1.2 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--vio)}
+.conv{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+.toggle{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.toggle input{width:auto;accent-color:var(--cy)}
+details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.chips{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap}
+.chip{font-size:10.5px;padding:4px 7px;border:1px solid var(--line2);border-radius:2px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip.up{border-color:rgba(54,238,138,.35)} .chip.dn{border-color:rgba(255,92,108,.35)}
+.setup ol{margin:0;padding-left:18px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+@media (max-width:420px){.status .txt{display:none}.brand{font-size:18px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="bar"><div class="bar-in">
+  <div class="brand">First<i>·</i>In</div>
+  <div class="spacer"></div>
+  <div class="status"><span class="dot" id="dot"></span><span class="txt" id="stxt">RPC</span><span>·</span><span><b id="cred" class="n">0</b> CR</span></div>
+  <button class="gear" id="openSettings" aria-label="RPC settings">RPC</button>
+</div></header>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="kicker">Solana · early wallet intelligence</div>
+    <h1>Who got in <span>first</span>, and who got paid.</h1>
+    <p>Drop the CAs of coins that ran. Every coin gets its own breakdown of its first buyers: entry market cap, how fast they got in, what they put in, what they took out, whether they're still holding, and their profit.</p>
+  </section>
+
+  <section class="panel setup" id="setup" hidden>
+    <div class="ph"><h2>RPC link</h2><span class="tagline">Helius free plan works</span></div>
+    <ol>
+      <li>Get a free key at <a href="https://dashboard.helius.dev/signup" target="_blank" rel="noopener">dashboard.helius.dev</a>.</li>
+      <li>Paste the key or the full RPC URL below. It's stored in this browser only.</li>
+    </ol>
+    <div>
+      <label class="lb" for="keyIn">API key or RPC URL</label>
+      <input id="keyIn" autocomplete="off" spellcheck="false" placeholder="https://mainnet.helius-rpc.com/?api-key=…">
+    </div>
+    <div class="row"><button class="go" id="saveKey">Save + test</button><button id="closeSettings">Close</button><span class="hint" id="keyStatus"></span></div>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabScan" aria-selected="true">Scan</button>
+    <button role="tab" id="tabRep" aria-selected="false">Repeaters <span class="badge n" id="repCount">0</span></button>
+    <button role="tab" id="tabWatch" aria-selected="false">Watch <span class="badge n" id="watchCount">0</span></button>
+  </div>
+
+  <!-- SCAN -->
+  <section id="scanView" style="display:flex;flex-direction:column;gap:16px">
+    <div class="panel">
+      <div class="ph"><h2>Scan coins</h2><span class="tagline">one CA per line</span></div>
+      <textarea id="mints" spellcheck="false" placeholder="&gt;_ paste CAs of coins that ran&#10;7xKq...pump&#10;Fg3d...pump"></textarea>
+      <div class="row">
+        <div style="flex:0 0 140px">
+          <label class="lb" for="nBuyers">First buyers / coin</label>
+          <input id="nBuyers" type="number" min="5" max="100" value="30" inputmode="numeric">
+        </div>
+        <div class="spacer"></div>
+        <button id="stopBtn" hidden>Stop</button>
+        <button class="go" id="scanBtn">Run scan</button>
+      </div>
+      <p class="hint">Pump.fun coins scan fastest. Each coin takes about 20–60 seconds and 150–400 credits, since every wallet's trades are read.</p>
+      <div class="log" id="log" hidden></div>
+    </div>
+    <div class="fbar" id="fbar" hidden></div>
+    <div id="coins"></div>
+  </section>
+
+  <!-- REPEATERS -->
+  <section id="repView" style="display:flex;flex-direction:column;gap:16px" hidden>
+    <div class="panel">
+      <div class="ph"><h2>Repeat early wallets</h2><span class="tagline">early on 2+ scanned coins</span></div>
+      <p class="hint" style="margin:0">The strongest signal: wallets that were first in on several of your runners. Sorted by how many coins, then total profit.</p>
+    </div>
+    <div id="reps"></div>
+  </section>
+
+  <!-- WATCH -->
+  <section id="watchView" style="display:flex;flex-direction:column;gap:16px" hidden>
+    <div class="panel">
+      <div class="ph"><h2>Watchlist</h2><span class="tagline" id="lastCheck"></span></div>
+      <div class="row" style="align-items:center">
+        <button class="go" id="checkBtn">Check recent buys</button>
+        <label class="toggle"><input type="checkbox" id="auto"> Auto every 3 min</label>
+      </div>
+      <div class="log" id="wlog" hidden></div>
+    </div>
+    <div id="converge"></div>
+    <div id="feed"></div>
+    <div class="panel">
+      <div class="ph"><h2>Watched wallets</h2></div>
+      <div class="row">
+        <input id="addAddr" placeholder="Wallet address" spellcheck="false" style="flex:2 1 220px">
+        <input id="addLabel" placeholder="Label" style="flex:1 1 120px">
+        <button id="addBtn">Add</button>
+      </div>
+      <div id="watchList"></div>
+      <details class="io">
+        <summary>Backup / restore list</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <p class="hint">Saved in this browser only. Copy it to keep a backup, paste to restore.</p>
+          <textarea id="ioBox" spellcheck="false" placeholder="address,label  (one per line)"></textarea>
+          <div class="row"><button class="sm" id="exportBtn">Copy list</button><button class="sm" id="importBtn">Add pasted</button><span class="hint" id="ioStatus"></span></div>
+        </div>
+      </details>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const short = a => a ? a.slice(0,4) + '…' + a.slice(-4) : '';
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('firstin.'+k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v){ try { localStorage.setItem('firstin.'+k, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------- base58 + PDA (verified against pump.fun's global & event-authority PDAs) ---------- */
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function b58decode(s){ let n=0n; for(const c of s){ const i=B58.indexOf(c); if(i<0) throw new Error('bad'); n=n*58n+BigInt(i);} const out=[]; while(n>0n){ out.push(Number(n%256n)); n/=256n; } for(const c of s){ if(c==='1') out.push(0); else break; } return new Uint8Array(out.reverse()); }
+function b58encode(b){ let n=0n; for(const x of b) n=n*256n+BigInt(x); let s=''; while(n>0n){ s=B58[Number(n%58n)]+s; n/=58n; } for(const x of b){ if(x===0) s='1'+s; else break; } return s; }
+const P = 2n**255n - 19n; const mod = a => ((a%P)+P)%P;
+function pw(b,e){ let r=1n; b=mod(b); while(e>0n){ if(e&1n) r=r*b%P; b=b*b%P; e>>=1n; } return r; }
+const D = mod(-121665n * pw(121666n, P-2n));
+function onCurve(by){ let y=0n; for(let i=31;i>=0;i--) y=(y<<8n)|BigInt(by[i]); y=mod(y&((1n<<255n)-1n)); const y2=y*y%P; const u=mod(y2-1n), v=mod(D*y2+1n); if(v===0n) return false; const x2=u*pw(v,P-2n)%P; if(x2===0n) return true; return pw(x2,(P-1n)/2n)===1n; }
+async function findPda(seeds, program){
+  const pid = b58decode(program), tail = new TextEncoder().encode('ProgramDerivedAddress');
+  for(let bump=255; bump>=0; bump--){
+    const parts=[...seeds, new Uint8Array([bump]), pid, tail];
+    const buf=new Uint8Array(parts.reduce((a,p)=>a+p.length,0)); let o=0; for(const p of parts){ buf.set(p,o); o+=p.length; }
+    const h=new Uint8Array(await crypto.subtle.digest('SHA-256', buf));
+    if(!onCurve(h)) return b58encode(h);
+  }
+  throw new Error('no PDA');
+}
+function isAddr(s){ try { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s) && b58decode(s).length===32; } catch { return false; } }
+
+const PUMP = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+const WSOL = 'So11111111111111111111111111111111111111112';
+const STABLES = ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'];
+const SKIP_MINTS = new Set([WSOL, ...STABLES]);
+
+/* ---------- RPC: paced under 10 req/s, retries, tx cache ---------- */
+const BUILT_IN_RPC = 'https://mainnet.helius-rpc.com/?api-key=fd1765e7-b182-4807-b820-d35c9c1b99d0';
+let rpcUrl = store.get('rpc', '') || BUILT_IN_RPC;
+let credits = 0, lastCall = 0, gate = Promise.resolve(), stopFlag = false;
+const GAP = 115;
+const txCache = new Map();
+function slot(){ const p = gate.then(async () => { const w = lastCall + GAP - Date.now(); if(w>0) await sleep(w); lastCall = Date.now(); }); gate = p; return p; }
+function bump(c){ credits += c; $('cred').textContent = credits.toLocaleString(); }
+function setLink(ok, txt){ $('dot').className = 'dot ' + (ok ? 'on' : 'err'); $('stxt').textContent = txt; }
+async function rpc(method, params, cost=1){
+  if(!rpcUrl) throw new Error('No RPC set. Tap RPC at the top right.');
+  for(let attempt=0; attempt<6; attempt++){
+    if(stopFlag) throw new Error('Stopped');
+    await slot();
+    let res;
+    try { res = await fetch(rpcUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({jsonrpc:'2.0', id:1, method, params})}); }
+    catch(e){ if(attempt<5){ await sleep(600*2**attempt); continue; } setLink(false,'RPC down'); throw new Error('Could not reach the RPC. Check your connection and key.'); }
+    if(res.status===401 || res.status===403){ setLink(false,'Key rejected'); throw new Error('The RPC rejected the key. Tap RPC to fix it.'); }
+    if(res.status===429 || res.status>=500){ await sleep(900*2**attempt); continue; }
+    let j; try { j = await res.json(); } catch { throw new Error('The RPC sent back something unreadable.'); }
+    bump(cost);
+    if(j.error){
+      if(j.error.code===-32429 || /rate|too many/i.test(j.error.message||'')){ await sleep(900*2**attempt); continue; }
+      throw new Error(j.error.message || 'RPC error');
+    }
+    return j.result;
+  }
+  throw new Error('The RPC kept rate-limiting. Wait a minute and try again.');
+}
+async function pool(items, conc, fn){
+  const out = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({length: Math.min(conc, items.length)}, async () => { while(i < items.length){ const k = i++; try { out[k] = await fn(items[k], k); } catch(e){ if(e.message==='Stopped') throw e; out[k] = null; } } }));
+  return out;
+}
+async function getTx(sig){
+  if(txCache.has(sig)) return txCache.get(sig);
+  const tx = await rpc('getTransaction', [sig, {encoding:'jsonParsed', maxSupportedTransactionVersion:0, commitment:'confirmed'}]);
+  if(tx){ if(txCache.size > 4000) txCache.clear(); txCache.set(sig, tx); }
+  return tx;
+}
+async function names(mints){
+  const m = {};
+  if(!mints.length) return m;
+  try {
+    for(let i=0;i<mints.length;i+=100){
+      const r = await rpc('getAssetBatch', {ids: mints.slice(i,i+100)}, 10);
+      for(const a of r||[]) if(a?.id) m[a.id] = {name: a.content?.metadata?.name || '', symbol: a.content?.metadata?.symbol || ''};
+    }
+  } catch {}
+  return m;
+}
+
+/* ---------- prices ---------- */
+let SOL_USD = store.get('solUsd', 0);
+async function dexPrices(mints){
+  const prices = {}; let solUsd = 0, solLiq = 0;
+  const all = [...new Set([...mints, WSOL])];
+  for(let i=0; i<all.length; i+=30){
+    try {
+      const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + all.slice(i,i+30).join(','));
+      if(!r.ok) continue;
+      const j = await r.json();
+      for(const p of j.pairs || []){
+        if(p.chainId !== 'solana') continue;
+        const base = p.baseToken?.address, liq = p.liquidity?.usd || 0;
+        if(base === WSOL){ if(/USD/i.test(p.quoteToken?.symbol||'') && liq > solLiq){ solUsd = Number(p.priceUsd) || solUsd; solLiq = liq; } continue; }
+        if(!mints.includes(base)) continue;
+        const cur = prices[base];
+        if(!cur || liq > cur.liq) prices[base] = {liq, priceUsd: Number(p.priceUsd)||0, priceSol: p.quoteToken?.address === WSOL ? Number(p.priceNative)||0 : 0};
+      }
+    } catch {}
+  }
+  if(!solUsd) for(const v of Object.values(prices)) if(v.priceSol && v.priceUsd){ solUsd = v.priceUsd / v.priceSol; break; }
+  for(const v of Object.values(prices)) if(!v.priceSol && solUsd && v.priceUsd) v.priceSol = v.priceUsd / solUsd;
+  if(solUsd){ SOL_USD = solUsd; store.set('solUsd', solUsd); }
+  return prices;
+}
+/* Live price straight from the pump.fun bonding curve while the coin hasn't migrated. */
+async function curvePrice(bc, decimals){
+  try {
+    const r = await rpc('getAccountInfo', [bc, {encoding:'base64'}]);
+    const b64 = r?.value?.data?.[0]; if(!b64) return null;
+    const bin = atob(b64); const u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+    if(u.length < 49) return null;
+    const dv = new DataView(u.buffer);
+    const vTok = Number(dv.getBigUint64(8, true)), vSol = Number(dv.getBigUint64(16, true)), complete = u[48] === 1;
+    if(complete || !vTok) return {complete: true};
+    return {complete: false, priceSol: (vSol/1e9) / (vTok/10**decimals)};
+  } catch { return null; }
+}
+
+/* ---------- parsing ---------- */
+function keysOf(tx){ return tx.transaction.message.accountKeys.map(k => typeof k === 'string' ? {pubkey:k, signer:false} : k); }
+const ui = b => Number(b?.uiTokenAmount?.uiAmount || 0);
+function deltas(tx, filterOwner){
+  const d = new Map();
+  const add = (b, sign) => { if(filterOwner && b.owner !== filterOwner) return; const k = b.owner+'|'+b.mint; d.set(k, (d.get(k)||0) + sign*ui(b)); };
+  (tx.meta.preTokenBalances||[]).forEach(b => add(b,-1));
+  (tx.meta.postTokenBalances||[]).forEach(b => add(b, 1));
+  return d;
+}
+/* SOL the owner gained in a tx: native lamports + wrapped SOL + stablecoins converted at the SOL price. */
+function solChange(tx, owner, keys, d){
+  const i = keys.findIndex(x => x.pubkey === owner);
+  let v = i >= 0 ? (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / 1e9 : 0;
+  v += d.get(owner+'|'+WSOL) || 0;
+  if(SOL_USD) for(const s of STABLES){ const x = d.get(owner+'|'+s); if(x) v += x / SOL_USD; }
+  return v;
+}
+function curveIn(tx, keys, bc){
+  const bi = keys.findIndex(x => x.pubkey === bc);
+  return bi >= 0 ? (tx.meta.postBalances[bi] - tx.meta.preBalances[bi]) / 1e9 : 0;
+}
+function buysIn(tx, mint){
+  if(!tx || !tx.meta || tx.meta.err) return [];
+  const keys = keysOf(tx), signers = new Set(keys.filter(k=>k.signer).map(k=>k.pubkey));
+  const pre = tx.meta.preTokenBalances || [];
+  const by = new Map();
+  for(const b of tx.meta.postTokenBalances || []){
+    if(b.mint !== mint || !signers.has(b.owner)) continue;
+    const dd = ui(b) - ui(pre.find(x => x.accountIndex === b.accountIndex));
+    if(dd <= 0) continue;
+    const e = by.get(b.owner) || {owner: b.owner, amount: 0, acct: keys[b.accountIndex]?.pubkey};
+    e.amount += dd; by.set(b.owner, e);
+  }
+  return [...by.values()];
+}
+function walletBuys(tx, wallet){
+  if(!tx || !tx.meta || tx.meta.err) return [];
+  const keys = keysOf(tx);
+  const i = keys.findIndex(x => x.pubkey === wallet);
+  if(i < 0 || !keys[i].signer) return [];
+  const d = deltas(tx, wallet);
+  const spent = -solChange(tx, wallet, keys, d);
+  const out = [];
+  for(const [k, v] of d){ const m = k.split('|')[1]; if(v > 0 && !SKIP_MINTS.has(m)) out.push({mint:m, amount:v, sol: spent}); }
+  return out;
+}
+
+/* ---------- launch history ---------- */
+async function oldestSigs(address, maxPages, onPage){
+  let before, prev = [], cur = [], pages = 0, total = 0;
+  while(pages < maxPages){
+    const opts = {limit:1000}; if(before) opts.before = before;
+    const r = await rpc('getSignaturesForAddress', [address, opts]);
+    pages++; total += r.length; prev = cur; cur = r; onPage(total);
+    if(r.length < 1000) return {sigs: [...prev, ...cur].reverse(), total, complete: true};
+    before = r[r.length-1].signature;
+  }
+  return {sigs: [], total, complete: false};
+}
+
+/* ---------- one wallet's full trade history on one coin ---------- */
+async function positionFor(owner, acct, mint, c){
+  const sigs = (await rpc('getSignaturesForAddress', [acct, {limit:100}])).filter(s => !s.err);
+  const txs = await pool(sigs, 6, s => getTx(s.signature));
+  let cost = 0, bought = 0, curveCost = 0, curveTok = 0, proceeds = 0, sold = 0, moved = 0, received = 0, buys = 0, sells = 0, lastSell = 0;
+  for(let k=0; k<txs.length; k++){
+    const tx = txs[k];
+    if(!tx || !tx.meta || tx.meta.err) continue;
+    const keys = keysOf(tx), d = deltas(tx, owner);
+    const tok = d.get(owner+'|'+mint) || 0;
+    if(!tok) continue;
+    const sc = solChange(tx, owner, keys, d);
+    const me = keys.find(x => x.pubkey === owner);
+    if(tok > 0){
+      if(me?.signer && sc < -0.00001){
+        bought += tok; cost += -sc; buys++;
+        const ci = c.bc ? curveIn(tx, keys, c.bc) : 0;
+        if(ci > 0){ curveCost += ci; curveTok += tok; }
+      } else received += tok;
+    } else {
+      if(sc > 0.0005){ sold += -tok; proceeds += sc; sells++; lastSell = Math.max(lastSell, sigs[k].blockTime || 0); }
+      else moved += -tok;
+    }
+  }
+  const partial = sigs.length >= 100;
+  let held = Math.max(0, bought + received - sold - moved);
+  if(partial){ try { held = ui({uiTokenAmount: (await rpc('getTokenAccountBalance', [acct])).value}); } catch { held = 0; } }
+  const value = held * (c.priceSol || 0);
+  const total = bought + received;
+  const entryPrice = curveTok > 0 ? curveCost / curveTok : (bought > 0 ? cost / bought : 0);
+  const sellPrice = sold > 0 ? proceeds / sold : 0;
+  let status;
+  if(total <= 0) status = 'unknown';
+  else if(held <= total * 0.01) status = moved > sold ? 'moved' : 'sold';
+  else if(sold > 0 || moved > 0) status = moved > sold ? 'moved-part' : 'partial';
+  else status = 'diamond';
+  return {cost, bought, proceeds, sold, moved, received, held, value, pnl: proceeds + value - cost,
+    entryPrice, sellPrice, buys, sells, status, partial, priced: !!c.priceSol, lastSell};
+}
+
+/* ---------- scan one coin ---------- */
+async function scanCoin(mint, N, log, meta){
+  const sym = meta?.symbol || short(mint);
+  const bc = await findPda([new TextEncoder().encode('bonding-curve'), b58decode(mint)], PUMP);
+  const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
+  const viaPump = probe.length > 0;
+  const addr = viaPump ? bc : mint;
+  const line = log(`${sym}: reading launch history…`, 'cur');
+  const {sigs, total, complete} = await oldestSigs(addr, viaPump ? 600 : 250, n => line(`${sym}: reading launch history… ${n.toLocaleString()} txs`, 'cur'));
+  if(!complete) return {mint, symbol: sym, name: meta?.name||'', skipped: `too many transactions (${total.toLocaleString()}+) to reach launch on a free RPC`};
+  const okSigs = sigs.filter(s => !s.err);
+  if(!okSigs.length) return {mint, symbol: sym, name: meta?.name||'', skipped: 'no successful transactions found'};
+  let supply = 0, decimals = 6;
+  try { const s = (await rpc('getTokenSupply', [mint])).value; supply = Number(s.uiAmount) || 0; decimals = s.decimals ?? 6; } catch {}
+  const createSlot = okSigs[0].slot, createTime = okSigs[0].blockTime;
+  const buyers = []; const seen = new Set(); let dev = null;
+  const cap = Math.min(okSigs.length, N*5);
+  for(let i=0; i<cap && buyers.length < N; i+=6){
+    const batch = okSigs.slice(i, Math.min(i+6, cap));
+    const txs = await pool(batch, 6, s => getTx(s.signature));
+    txs.forEach((tx, j) => {
+      if(!tx) return;
+      if(i===0 && j===0) dev = keysOf(tx)[0]?.pubkey || null;
+      const bs = buysIn(tx, mint);
+      const ci = viaPump && bs.length === 1 ? curveIn(tx, keysOf(tx), bc) : 0;
+      for(const b of bs){
+        if(seen.has(b.owner) || b.owner === bc) continue;
+        seen.add(b.owner);
+        buyers.push({owner:b.owner, amount:b.amount, acct:b.acct, firstPrice: ci > 0 ? ci / b.amount : 0, rank: buyers.length+1,
+          slotDelta: batch[j].slot - createSlot, secs: Math.max(0, (batch[j].blockTime||0) - (createTime||0)), sig: batch[j].signature, t: batch[j].blockTime});
+      }
+    });
+    line(`${sym}: found ${buyers.length}/${N} first buyers`, 'cur');
+  }
+  const list = buyers.slice(0, N);
+  // price now: bonding curve if still on pump, else DexScreener
+  let priceSol = 0, migrated = !viaPump;
+  if(viaPump){ const cp = await curvePrice(bc, decimals); if(cp && !cp.complete) priceSol = cp.priceSol; else migrated = true; }
+  if(!priceSol){ const p = await dexPrices([mint]); priceSol = p[mint]?.priceSol || 0; }
+  else if(!SOL_USD) await dexPrices([]);
+  // every wallet's position
+  const ctx = {bc: viaPump ? bc : null, priceSol};
+  let done = 0;
+  await pool(list, 2, async b => {
+    try { b.pos = await positionFor(b.owner, b.acct, mint, ctx); } catch(e){ if(e.message === 'Stopped') throw e; b.pos = null; }
+    done++; line(`${sym}: reading trades ${done}/${list.length} wallets`, 'cur');
+  });
+  line(`${sym}: ${list.length} early wallets done${priceSol ? '' : ' (no live price, held bags valued at 0)'}`, priceSol ? 'ok' : 'wn');
+  return {mint, symbol: sym, name: meta?.name || '', viaPump, migrated, dev, createSlot, createTime, supply, decimals, priceSol, buyers: list, at: Date.now()};
+}
+
+/* ---------- formatting ---------- */
+const usd = v => { const a = Math.abs(v), s = v < 0 ? '-$' : '$'; if(a >= 1e9) return s+(a/1e9).toFixed(1)+'B'; if(a >= 1e6) return s+(a/1e6).toFixed(a>=1e7?0:1)+'M'; if(a >= 1e3) return s+(a/1e3).toFixed(a>=1e4?0:1)+'K'; return s+a.toFixed(0); };
+const sol = v => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(3)) + ' SOL';
+const sSol = v => (v > 0 ? '+' : '') + sol(v);
+const sUsd = v => SOL_USD ? (v > 0 ? '+' : '') + usd(v * SOL_USD) : '';
+const mcapOf = (price, coin) => price && coin.supply ? (SOL_USD ? usd(price * coin.supply * SOL_USD) : sol(price * coin.supply)) : '—';
+const dur = s => s < 1 ? '<1s' : s < 60 ? Math.round(s)+'s' : s < 3600 ? Math.round(s/60)+'m' : s < 86400 ? (s/3600).toFixed(1)+'h' : Math.round(s/86400)+'d';
+const ago = t => { if(!t) return '—'; const s = Date.now()/1000 - t; if(s < 90) return 'just now'; return dur(s) + ' ago'; };
+const cls = v => v > 0.0005 ? 'up' : v < -0.0005 ? 'dn' : 'flat';
+const pnlTag = v => v > 0.0005 ? '<span class="t win">▲ Profit</span>' : v < -0.0005 ? '<span class="t loss">▼ Loss</span>' : '<span class="t sold">Break-even</span>';
+const STATUS = {
+  diamond: ['dia','◆ Diamond hands'], partial: ['part','Took profits · holding'], sold: ['sold','Sold all'],
+  moved: ['moved','Moved to other wallet'], 'moved-part': ['moved','Moved some · holding'], unknown: ['warn','No trades read']
+};
+
+/* ---------- state ---------- */
+let coins = store.get('coins', []);
+let watch = store.get('watch', []);
+let feed = store.get('feed', []);
+let lastChecked = store.get('lastChecked', 0);
+let filter = 'all', sortBy = 'pnl', hideBots = false;
+let busy = false;
+const expanded = new Set();
+
+function logger(el){
+  el.hidden = false; el.innerHTML = '';
+  return (msg, c) => { const d = document.createElement('div'); if(c) d.className = c; d.textContent = msg; el.appendChild(d); el.scrollTop = el.scrollHeight;
+    return (m2, c2) => { d.textContent = m2; d.className = c2 || ''; el.scrollTop = el.scrollHeight; }; };
+}
+const isWatched = a => watch.some(w => w.a === a);
+const labelOf = a => watch.find(w => w.a === a)?.label || '';
+function toggleWatch(a){
+  if(isWatched(a)) watch = watch.filter(w => w.a !== a); else watch.push({a, label:''});
+  store.set('watch', watch); renderAll();
+}
+async function copy(text, btn){
+  try { await navigator.clipboard.writeText(text); flash(btn, 'Copied'); }
+  catch { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); flash(btn,'Copied'); } catch { flash(btn,'Copy failed'); } t.remove(); }
+}
+function flash(btn, msg){ if(!btn) return; const o = btn.textContent; btn.textContent = msg; setTimeout(() => btn.textContent = o, 1200); }
+function bindActs(el){
+  el.querySelectorAll('[data-watch]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); toggleWatch(b.dataset.watch); });
+  el.querySelectorAll('[data-copy]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); copy(b.dataset.copy, b); });
+  el.querySelectorAll('[data-more]').forEach(b => b.onclick = () => { expanded.add(b.dataset.more); renderCoins(); });
+}
+
+/* ---------- wallet card (inside a coin) ---------- */
+function walletTags(b, coin){
+  const t = [], p = b.pos;
+  if(p && p.status !== 'unknown') t.push(pnlTag(p.pnl));
+  if(p) t.push(`<span class="t ${STATUS[p.status][0]}">${STATUS[p.status][1]}</span>`);
+  if(b.owner === coin.dev) t.push(`<span class="t dev">Dev</span>`);
+  if(b.slotDelta <= 1) t.push(`<span class="t snipe">Sniper · block ${b.slotDelta}</span>`);
+  else if(b.rank <= 10) t.push(`<span class="t early">Very early</span>`);
+  else t.push(`<span class="t early">Early</span>`);
+  if(p?.received > 0) t.push(`<span class="t warn">Got tokens free</span>`);
+  if(p?.partial) t.push(`<span class="t warn">Long history · approx</span>`);
+  return t.join('');
+}
+function walletCard(b, coin){
+  const p = b.pos;
+  const entry = p?.entryPrice || b.firstPrice;
+  const watched = isWatched(b.owner), lbl = labelOf(b.owner);
+  const pnlHtml = p
+    ? `<b class="${cls(p.pnl)}">${esc(sSol(p.pnl))}</b><small>${esc(sUsd(p.pnl))}${p.cost > 0 ? ` · ${p.pnl >= 0 ? '+' : ''}${Math.round(p.pnl / p.cost * 100)}%` : ''}</small>`
+    : `<b class="flat">—</b><small>trades not read</small>`;
+  const holdTxt = !p ? '—' : p.held > 0 ? (coin.priceSol ? `${sol(p.value)} now` : 'holding (no price)') : 'nothing';
+  const soldTxt = !p ? '—' : p.sold > 0 ? `${sol(p.proceeds)} · avg ${mcapOf(p.sellPrice, coin)}` : p.moved > 0 ? 'moved, not sold' : 'never sold';
+  return `<div class="w">
+    <div class="wid"><span class="rank">#${String(b.rank).padStart(2,'0')}</span>${lbl ? `<span class="lbl">${esc(lbl)}</span>` : ''}<span class="addr">${esc(short(b.owner))}</span></div>
+    <div class="pnl">${pnlHtml}</div>
+    <div class="tags">${walletTags(b, coin)}</div>
+    <div class="stats">
+      <div class="st"><span>Entry</span><b>${esc(mcapOf(entry, coin))} mcap · +${esc(dur(b.secs))}</b></div>
+      <div class="st"><span>Bought</span><b>${p ? esc(sol(p.cost)) + (p.buys > 1 ? ` · ${p.buys} buys` : '') : '—'}</b></div>
+      <div class="st"><span>Sold</span><b>${esc(soldTxt)}</b></div>
+      <div class="st"><span>Holding</span><b>${esc(holdTxt)}</b></div>
+    </div>
+    <div class="acts">
+      <button class="star" data-watch="${esc(b.owner)}" aria-pressed="${watched}">${watched ? '★ Watching' : '☆ Watch'}</button>
+      <a href="https://gmgn.ai/sol/address/${esc(b.owner)}" target="_blank" rel="noopener">GMGN</a>
+      <a href="https://solscan.io/account/${esc(b.owner)}" target="_blank" rel="noopener">Solscan</a>
+      <button data-copy="${esc(b.owner)}">Copy</button>
+    </div>
+  </div>`;
+}
+function passes(b, coin){
+  const p = b.pos;
+  if(hideBots && (b.slotDelta <= 1 || b.owner === coin.dev)) return false;
+  if(filter === 'profit') return p && p.pnl > 0;
+  if(filter === 'loss') return p && p.pnl <= 0;
+  if(filter === 'diamond') return p && (p.status === 'diamond' || p.status === 'partial');
+  if(filter === 'sold') return p && p.status === 'sold';
+  return true;
+}
+function coinBlock(coin, idx){
+  if(coin.skipped) return `<div class="err">${esc(coin.symbol)} (${esc(short(coin.mint))}) skipped: ${esc(coin.skipped)}.</div>`;
+  const read = coin.buyers.filter(b => b.pos && b.pos.status !== 'unknown');
+  const wins = read.filter(b => b.pos.pnl > 0.0005).length;
+  const net = read.reduce((s,b) => s + b.pos.pnl, 0);
+  const holders = read.filter(b => b.pos.held > 0).length;
+  const winPct = read.length ? Math.round(wins / read.length * 100) : 0;
+  let rows = coin.buyers.filter(b => passes(b, coin));
+  rows = rows.slice().sort(sortBy === 'pnl' ? (a,b) => (b.pos?.pnl ?? -1e9) - (a.pos?.pnl ?? -1e9) : (a,b) => a.rank - b.rank);
+  const lim = expanded.has(coin.mint) ? rows.length : 12;
+  const mcNow = coin.priceSol && coin.supply ? mcapOf(coin.priceSol, coin) : '—';
+  return `<details class="coin" ${idx < 2 ? 'open' : ''}>
+    <summary>
+      <div class="ch"><span class="tick">$${esc(coin.symbol)}</span><span class="cname">${esc(coin.name)}</span>
+        <span class="chev"><span class="net ${cls(net)}">${esc(sSol(net))}</span> <span class="c">▸</span></span></div>
+      <div class="ca"><code>${esc(short(coin.mint))}</code><button class="sm" data-copy="${esc(coin.mint)}">Copy CA</button><a href="https://dexscreener.com/solana/${esc(coin.mint)}" target="_blank" rel="noopener">Chart ↗</a><span>${coin.migrated ? 'Migrated' : 'On pump curve'}</span></div>
+      <div class="kpis">
+        <div class="kpi"><span>Mcap now</span><b>${esc(mcNow)}</b></div>
+        <div class="kpi"><span>Launched</span><b>${esc(ago(coin.createTime))}</b></div>
+        <div class="kpi"><span>In profit</span><b class="up">${wins}/${read.length}</b></div>
+        <div class="kpi"><span>Still holding</span><b class="cyan" style="color:var(--cy)">${holders}</b></div>
+        <div class="kpi"><span>Net PnL</span><b class="${cls(net)}">${esc(sSol(net))}</b></div>
+      </div>
+      <div class="meter" title="${winPct}% of early wallets in profit"><i style="width:${winPct}%"></i></div>
+    </summary>
+    ${rows.length ? rows.slice(0, lim).map(b => walletCard(b, coin)).join('') : `<div class="more hint">No wallets match this filter.</div>`}
+    ${rows.length > lim ? `<div class="more"><button class="sm" data-more="${esc(coin.mint)}">Show all ${rows.length}</button></div>` : ''}
+  </details>`;
+}
+function exampleCoin(){
+  return `<div class="empty"><span class="ex">Example output</span><b>Each coin you scan looks like this</b>
+  <div class="coin" style="opacity:.92"><div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line)">
+    <div class="ch"><span class="tick">$TICKER</span><span class="cname">Example coin</span><span class="chev"><span class="net up">+38.2 SOL</span></span></div>
+    <div class="kpis"><div class="kpi"><span>Mcap now</span><b>$2.4M</b></div><div class="kpi"><span>In profit</span><b class="up">19/30</b></div><div class="kpi"><span>Still holding</span><b style="color:var(--cy)">11</b></div></div>
+  </div>
+  <div class="w"><div class="wid"><span class="rank">#03</span><span class="addr">7xKq…9fPa</span></div><div class="pnl"><b class="up">+12.40 SOL</b><small>+1,820%</small></div>
+    <div class="tags"><span class="t win">▲ Profit</span><span class="t dia">◆ Diamond hands</span><span class="t early">Very early</span></div>
+    <div class="stats"><div class="st"><span>Entry</span><b>$5.2K mcap · +14s</b></div><div class="st"><span>Bought</span><b>0.650 SOL</b></div><div class="st"><span>Sold</span><b>never sold</b></div><div class="st"><span>Holding</span><b>13.05 SOL now</b></div></div></div>
+  <div class="w"><div class="wid"><span class="rank">#07</span><span class="addr">Fg3d…Lw2Q</span></div><div class="pnl"><b class="up">+4.10 SOL</b><small>+205%</small></div>
+    <div class="tags"><span class="t win">▲ Profit</span><span class="t sold">Sold all</span><span class="t early">Very early</span></div>
+    <div class="stats"><div class="st"><span>Entry</span><b>$7.9K mcap · +31s</b></div><div class="st"><span>Bought</span><b>2.00 SOL</b></div><div class="st"><span>Sold</span><b>6.10 SOL · avg $24K</b></div><div class="st"><span>Holding</span><b>nothing</b></div></div></div>
+  </div></div>`;
+}
+function renderFilters(){
+  const el = $('fbar');
+  if(!coins.length){ el.hidden = true; return; }
+  el.hidden = false;
+  const f = (k, t) => `<button data-f="${k}" aria-pressed="${filter===k}">${t}</button>`;
+  el.innerHTML = f('all','All') + f('profit','In profit') + f('loss','In loss') + f('diamond','Holding') + f('sold','Sold all')
+    + `<span class="sep"></span><button data-s aria-pressed="${sortBy==='pnl'}">Sort: ${sortBy==='pnl'?'PnL':'Entry'}</button>`
+    + `<button data-h aria-pressed="${hideBots}">Hide snipers/devs</button>`;
+  el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filter = b.dataset.f; renderCoins(); });
+  el.querySelector('[data-s]').onclick = () => { sortBy = sortBy === 'pnl' ? 'rank' : 'pnl'; renderCoins(); };
+  el.querySelector('[data-h]').onclick = () => { hideBots = !hideBots; renderCoins(); };
+}
+function renderCoins(){
+  renderFilters();
+  const el = $('coins');
+  if(!coins.length){ el.innerHTML = exampleCoin(); return; }
+  const open = new Set([...el.querySelectorAll('details.coin')].map((d,i) => d.open ? i : -1).filter(i => i >= 0));
+  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:14px">${coins.map(coinBlock).join('')}</div>`;
+  if(open.size){ el.querySelectorAll('details.coin').forEach((d,i) => d.open = open.has(i)); }
+  bindActs(el);
+}
+
+/* ---------- repeaters (early on 2+ coins) ---------- */
+function repeaters(){
+  const m = new Map();
+  for(const c of coins){ if(c.skipped) continue;
+    for(const b of c.buyers){ const r = m.get(b.owner) || {a:b.owner, hits:[]}; r.hits.push({c, b}); m.set(b.owner, r); } }
+  return [...m.values()].filter(r => r.hits.length >= 2).map(r => {
+    const pnl = r.hits.reduce((s,h) => s + (h.b.pos?.pnl || 0), 0);
+    const cost = r.hits.reduce((s,h) => s + (h.b.pos?.cost || 0), 0);
+    const snipes = r.hits.filter(h => h.b.slotDelta <= 1).length;
+    const dev = r.hits.some(h => h.b.owner === h.c.dev);
+    const holding = r.hits.filter(h => h.b.pos?.held > 0).length;
+    return {...r, pnl, cost, snipes, dev, holding, avgRank: r.hits.reduce((s,h)=>s+h.b.rank,0)/r.hits.length};
+  }).sort((a,b) => b.hits.length - a.hits.length || b.pnl - a.pnl);
+}
+function renderReps(){
+  const reps = repeaters();
+  $('repCount').textContent = reps.length;
+  const el = $('reps');
+  const scanned = coins.filter(c => !c.skipped).length;
+  if(scanned < 2){ el.innerHTML = `<div class="empty"><b>Scan 2+ coins</b><span>Repeaters show up once you've scanned at least two runners. 3–10 from the same week or narrative works best.</span></div>`; return; }
+  if(!reps.length){ el.innerHTML = `<div class="empty"><b>No repeat wallets</b><span>None of the early wallets overlap across these coins. Try more runners from the same period.</span></div>`; return; }
+  el.innerHTML = `<div class="coin">${reps.slice(0,100).map(r => {
+    const bot = r.snipes / r.hits.length >= 0.5;
+    const tags = [];
+    if(r.pnl > 0 && !bot && !r.dev) tags.push('<span class="t smart">Smart money</span>');
+    tags.push(pnlTag(r.pnl));
+    if(bot) tags.push('<span class="t snipe">Sniper bot</span>');
+    if(r.dev) tags.push('<span class="t dev">Dev wallet</span>');
+    if(r.holding) tags.push(`<span class="t dia">◆ Holding ${r.holding}</span>`);
+    const watched = isWatched(r.a), lbl = labelOf(r.a);
+    return `<div class="w">
+      <div class="wid"><span class="rank">${r.hits.length}/${scanned}</span>${lbl ? `<span class="lbl">${esc(lbl)}</span>` : ''}<span class="addr">${esc(short(r.a))}</span></div>
+      <div class="pnl"><b class="${cls(r.pnl)}">${esc(sSol(r.pnl))}</b><small>${esc(sUsd(r.pnl))}${r.cost > 0 ? ` · ${r.pnl>=0?'+':''}${Math.round(r.pnl/r.cost*100)}%` : ''}</small></div>
+      <div class="tags">${tags.join('')}</div>
+      <div class="chips">${r.hits.sort((a,b)=>a.b.rank-b.b.rank).map(h => `<span class="chip ${cls(h.b.pos?.pnl||0)}">$${esc(h.c.symbol)} #${h.b.rank} · ${esc(mcapOf(h.b.pos?.entryPrice || h.b.firstPrice, h.c))} · <span class="${cls(h.b.pos?.pnl||0)}">${h.b.pos ? esc(sSol(h.b.pos.pnl)) : '—'}</span></span>`).join('')}</div>
+      <div class="acts">
+        <button class="star" data-watch="${esc(r.a)}" aria-pressed="${watched}">${watched ? '★ Watching' : '☆ Watch'}</button>
+        <a href="https://gmgn.ai/sol/address/${esc(r.a)}" target="_blank" rel="noopener">GMGN</a>
+        <a href="https://solscan.io/account/${esc(r.a)}" target="_blank" rel="noopener">Solscan</a>
+        <button data-copy="${esc(r.a)}">Copy</button>
+      </div></div>`;
+  }).join('')}</div>`;
+  bindActs(el);
+}
+
+/* ---------- scan flow ---------- */
+$('scanBtn').onclick = async () => {
+  if(busy) return;
+  const mints = [...new Set($('mints').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean))];
+  const bad = mints.filter(m => !isAddr(m));
+  const log = logger($('log'));
+  if(!mints.length){ log('Paste at least one CA.', 'er'); return; }
+  if(bad.length){ log(`Not valid Solana addresses: ${bad.map(short).join(', ')}`, 'er'); return; }
+  const N = Math.max(5, Math.min(100, parseInt($('nBuyers').value) || 30));
+  busy = true; stopFlag = false; $('scanBtn').disabled = true; $('stopBtn').hidden = false;
+  const start = credits; const fresh = [];
+  try {
+    log(`Scanning ${mints.length} coin${mints.length>1?'s':''} · ${N} first buyers each`);
+    const meta = await names(mints);
+    for(const m of mints){
+      try { fresh.push(await scanCoin(m, N, log, meta[m])); }
+      catch(e){ if(e.message === 'Stopped') throw e; fresh.push({mint:m, symbol: meta[m]?.symbol || short(m), skipped: e.message}); log(`${short(m)}: ${e.message}`, 'er'); }
+      coins = fresh.slice(); store.set('coins', coins); renderAll();
+    }
+    log(`Done · ${(credits-start).toLocaleString()} credits used`, 'ok');
+  } catch(e){
+    log(e.message === 'Stopped' ? 'Stopped · showing finished coins' : e.message, e.message === 'Stopped' ? 'wn' : 'er');
+  } finally {
+    busy = false; $('scanBtn').disabled = false; $('stopBtn').hidden = true;
+    if(fresh.length){ coins = fresh; store.set('coins', coins); }
+    renderAll();
+  }
+};
+$('stopBtn').onclick = () => { stopFlag = true; };
+
+/* ---------- watchlist ---------- */
+function renderWatchList(){
+  $('watchCount').textContent = watch.length;
+  const el = $('watchList');
+  if(!watch.length){ el.innerHTML = `<div class="empty"><b>No wallets yet</b><span>Tap ☆ Watch on any wallet, or add an address above.</span></div>`; return; }
+  el.innerHTML = `<div class="coin">${watch.map((w,i) => `<div class="w" style="grid-template-columns:1fr auto;align-items:center">
+      <div class="wid">${w.label ? `<span class="lbl">${esc(w.label)}</span>` : ''}<span class="addr">${esc(short(w.a))}</span></div>
+      <div class="acts" style="grid-column:auto"><button data-rename="${i}">Label</button><button data-rm="${i}">Remove</button></div>
+      <div class="row" style="grid-column:1/-1" data-edit="${i}" hidden><input id="lbl${i}" value="${esc(w.label||'')}" placeholder="Label" style="flex:1"><button class="sm" data-savelbl="${i}">Save</button></div>
+    </div>`).join('')}</div>`;
+  el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { watch.splice(+b.dataset.rm, 1); store.set('watch', watch); renderAll(); });
+  el.querySelectorAll('[data-rename]').forEach(b => b.onclick = () => { const e = el.querySelector(`[data-edit="${b.dataset.rename}"]`); e.hidden = !e.hidden; });
+  el.querySelectorAll('[data-savelbl]').forEach(b => b.onclick = () => { const i = +b.dataset.savelbl; watch[i].label = $('lbl'+i).value.trim(); store.set('watch', watch); renderAll(); });
+}
+$('addBtn').onclick = () => {
+  const a = $('addAddr').value.trim();
+  if(!isAddr(a)){ $('addAddr').setCustomValidity('Not a Solana address'); $('addAddr').reportValidity(); return; }
+  $('addAddr').setCustomValidity('');
+  if(!isWatched(a)) watch.push({a, label: $('addLabel').value.trim()});
+  $('addAddr').value = ''; $('addLabel').value = '';
+  store.set('watch', watch); renderAll();
+};
+$('exportBtn').onclick = e => { const txt = watch.map(w => w.a + (w.label ? ',' + w.label : '')).join('\n'); $('ioBox').value = txt; copy(txt, e.currentTarget); };
+$('importBtn').onclick = () => {
+  let added = 0;
+  for(const line of $('ioBox').value.split('\n')){
+    const [a, ...rest] = line.split(','); const addr = (a||'').trim();
+    if(isAddr(addr) && !isWatched(addr)){ watch.push({a: addr, label: rest.join(',').trim()}); added++; }
+  }
+  store.set('watch', watch); renderAll();
+  $('ioStatus').textContent = added ? `Added ${added}.` : 'No new addresses found.';
+};
+function renderFeed(){
+  const lbl = a => labelOf(a) || short(a);
+  $('lastCheck').textContent = lastChecked ? 'checked ' + ago(lastChecked/1000) : '';
+  const dayAgo = Date.now()/1000 - 86400;
+  const byMint = new Map();
+  for(const f of feed){ if(!f.t || f.t < dayAgo) continue; const s = byMint.get(f.mint) || {mint:f.mint, sym:f.sym, wallets:new Set(), first:f.t}; s.wallets.add(f.w); s.first = Math.min(s.first, f.t); byMint.set(f.mint, s); }
+  const conv = [...byMint.values()].filter(s => s.wallets.size >= 2).sort((a,b) => b.wallets.size - a.wallets.size);
+  $('converge').innerHTML = conv.length ? `<div class="alert"><h3>Overlap · same coin, multiple watched wallets</h3>${conv.map(s => `<div class="conv"><span><b>$${esc(s.sym)}</b> · ${s.wallets.size} wallets · first ${esc(ago(s.first))}</span><span class="acts" style="grid-column:auto"><a href="https://dexscreener.com/solana/${esc(s.mint)}" target="_blank" rel="noopener">Chart</a><button data-copy="${esc(s.mint)}">Copy CA</button></span></div>`).join('')}</div>` : '';
+  bindActs($('converge'));
+  const el = $('feed');
+  if(!watch.length){ el.innerHTML = ''; return; }
+  if(!feed.length){ el.innerHTML = `<div class="empty"><b>${lastChecked ? 'No recent buys' : 'Ready'}</b><span>${lastChecked ? 'None of your watched wallets bought a coin in their last 15 transactions.' : `Tap “Check recent buys” to see what your ${watch.length} wallet${watch.length>1?'s are':' is'} buying.`}</span></div>`; return; }
+  el.innerHTML = `<div class="coin">${feed.slice(0,80).map(f => `<div class="w" style="align-items:center">
+    <div class="wid"><span class="lbl">${esc(lbl(f.w))}</span><span class="hint">bought</span><span class="addr">$${esc(f.sym)}</span>${byMint.get(f.mint)?.wallets.size >= 2 ? '<span class="t smart">Overlap</span>' : ''}</div>
+    <div class="pnl"><small>${esc(ago(f.t))}</small>${f.sol > 0 ? `<b class="flat" style="font-size:13px">${esc(sol(f.sol))}</b>` : ''}</div>
+    <div class="acts"><a href="https://dexscreener.com/solana/${esc(f.mint)}" target="_blank" rel="noopener">Chart</a><a href="https://solscan.io/tx/${esc(f.sig)}" target="_blank" rel="noopener">Tx</a><button data-copy="${esc(f.mint)}">Copy CA</button></div>
+  </div>`).join('')}</div>`;
+  bindActs(el);
+}
+async function checkWatch(){
+  if(busy || !watch.length) return;
+  busy = true; stopFlag = false; $('checkBtn').disabled = true;
+  const log = logger($('wlog')); const start = credits; const items = [];
+  try {
+    for(const w of watch){
+      const line = log(`${w.label || short(w.a)}: reading…`, 'cur');
+      try {
+        const sigs = (await rpc('getSignaturesForAddress', [w.a, {limit:15}])).filter(s => !s.err);
+        const txs = await pool(sigs, 6, s => getTx(s.signature));
+        let n = 0;
+        txs.forEach((tx, i) => { for(const b of walletBuys(tx, w.a)){ items.push({w: w.a, mint: b.mint, sol: b.sol, sig: sigs[i].signature, t: sigs[i].blockTime}); n++; } });
+        line(`${w.label || short(w.a)}: ${n} buy${n===1?'':'s'}`, 'ok');
+      } catch(e){ if(e.message === 'Stopped') throw e; line(`${w.label || short(w.a)}: ${e.message}`, 'er'); }
+    }
+    const meta = await names([...new Set(items.map(i => i.mint))]);
+    items.forEach(i => i.sym = meta[i.mint]?.symbol || short(i.mint));
+    feed = items.sort((a,b) => (b.t||0) - (a.t||0)); lastChecked = Date.now();
+    store.set('feed', feed); store.set('lastChecked', lastChecked);
+    log(`Done · ${(credits-start).toLocaleString()} credits used`, 'ok');
+  } catch(e){ log(e.message, 'er'); }
+  finally { busy = false; $('checkBtn').disabled = false; renderFeed(); }
+}
+$('checkBtn').onclick = checkWatch;
+let autoTimer = null;
+$('auto').onchange = () => {
+  clearInterval(autoTimer); store.set('auto', $('auto').checked);
+  if($('auto').checked) autoTimer = setInterval(() => { if(document.visibilityState === 'visible') checkWatch(); }, 180000);
+};
+
+/* ---------- settings + tabs ---------- */
+function showSettings(open){ $('setup').hidden = !open; if(open) $('keyIn').value = ''; }
+$('openSettings').onclick = () => showSettings($('setup').hidden);
+$('closeSettings').onclick = () => showSettings(false);
+$('saveKey').onclick = async () => {
+  const v = $('keyIn').value.trim();
+  if(!v){ $('keyStatus').textContent = 'Paste a key or URL first.'; return; }
+  const url = /^https?:\/\//.test(v) ? v : `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(v)}`;
+  const prev = rpcUrl; rpcUrl = url; $('keyStatus').textContent = 'Testing…';
+  try { const s = await rpc('getSlot', []); store.set('rpc', url); setLink(true, 'Linked'); $('keyStatus').textContent = `Linked · slot ${Number(s).toLocaleString()}`; setTimeout(() => showSettings(false), 900); }
+  catch(e){ rpcUrl = prev; $('keyStatus').textContent = e.message; }
+};
+function tab(which){
+  for(const [t, v] of [['Scan','scan'],['Rep','rep'],['Watch','watch']]){
+    $('tab'+t).setAttribute('aria-selected', which === v);
+    $(v+'View').hidden = which !== v;
+  }
+  store.set('tab', which);
+}
+$('tabScan').onclick = () => tab('scan');
+$('tabRep').onclick = () => tab('rep');
+$('tabWatch').onclick = () => tab('watch');
+function renderAll(){ renderCoins(); renderReps(); renderWatchList(); renderFeed(); }
+
+/* ---------- boot ---------- */
+tab(['scan','rep','watch'].includes(location.hash.slice(1)) ? location.hash.slice(1) : store.get('tab', 'scan'));
+if(store.get('auto', false)){ $('auto').checked = true; $('auto').onchange(); }
+renderAll();
+rpc('getSlot', []).then(s => setLink(true, 'Linked · slot ' + Number(s).toLocaleString())).catch(() => setLink(false, 'RPC offline'));
+})();
+</script>
+</body>
+</html>
