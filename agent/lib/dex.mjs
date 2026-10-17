@@ -7,7 +7,7 @@ async function getJson(fetchImpl, url){
   try { const r = await fetchImpl(url); if(!r.ok) return null; return await r.json(); } catch { return null; }
 }
 
-/* Best (most liquid) Solana pair per mint: {mint, symbol, name, mcap, liq, priceUsd, vol24, change24, createdAt, url} */
+/* Best (most liquid) Solana pair per mint, with the socials the project listed. */
 export async function pairInfo(mints, fetchImpl = fetch){
   const out = {};
   const list = [...new Set(mints)];
@@ -23,16 +23,20 @@ export async function pairInfo(mints, fetchImpl = fetch){
       out[mint] = {
         mint, symbol: p.baseToken?.symbol || '', name: p.baseToken?.name || '',
         mcap: p.marketCap || p.fdv || 0, liq, priceUsd: Number(p.priceUsd) || 0,
-        vol24: p.volume?.h24 || 0, change24: p.priceChange?.h24 || 0,
-        createdAt: p.pairCreatedAt || 0, dex: p.dexId || '', url: p.url || `https://dexscreener.com/solana/${mint}`
+        vol24: p.volume?.h24 || 0, change24: p.priceChange?.h24 || 0, change1h: p.priceChange?.h1 || 0,
+        buys24: p.txns?.h24?.buys || 0, sells24: p.txns?.h24?.sells || 0,
+        createdAt: p.pairCreatedAt || 0, dex: p.dexId || '', pair: p.pairAddress || '',
+        socials: (p.info?.socials || []).map(s => ({type: s.type || '', url: s.url || ''})),
+        websites: (p.info?.websites || []).map(w => w.url).filter(Boolean),
+        url: p.url || `https://dexscreener.com/solana/${mint}`
       };
     }
   }
   return out;
 }
 
-/* Fresh Solana coins that are actually running, best first. */
-export async function discover({minMcapUsd = 250000, maxAgeHours = 72, minLiquidityUsd = 15000, exclude = new Set(), limit = 10} = {}, fetchImpl = fetch){
+/* Fresh Solana coins people are pushing right now (boosts + new profiles), with market data. Unfiltered. */
+export async function candidates({exclude = new Set(), max = 60} = {}, fetchImpl = fetch){
   const feeds = await Promise.all([
     getJson(fetchImpl, `${API}/token-boosts/top/v1`),
     getJson(fetchImpl, `${API}/token-boosts/latest/v1`),
@@ -43,12 +47,6 @@ export async function discover({minMcapUsd = 250000, maxAgeHours = 72, minLiquid
     if(t?.chainId === 'solana' && t.tokenAddress && !exclude.has(t.tokenAddress)) mints.add(t.tokenAddress);
   }
   if(!mints.size) return [];
-  const info = await pairInfo([...mints], fetchImpl);
-  const now = Date.now();
-  return Object.values(info)
-    .filter(c => c.mcap >= minMcapUsd && c.liq >= minLiquidityUsd && c.createdAt && (now - c.createdAt) <= maxAgeHours * 3600e3)
-    // pump.fun coins scan far cheaper, so they go first among similar runners
-    .map(c => ({...c, score: Math.log10(1 + c.vol24) + (c.mint.endsWith('pump') ? 0.5 : 0)}))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  const info = await pairInfo([...mints].slice(0, max), fetchImpl);
+  return Object.values(info);
 }

@@ -9,7 +9,10 @@ import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {createSolana, isAddr, short, BudgetError} from './lib/solana.mjs';
-import {pairInfo, discover} from './lib/dex.mjs';
+import {pairInfo, candidates} from './lib/dex.mjs';
+import {checkSocial} from './lib/social.mjs';
+import {vetChain} from './lib/vet.mjs';
+import {DEFAULT_THRESHOLDS, freeKill, priority, socialKill, chiefVerdict} from './lib/desk.mjs';
 import {analyze, matchPrevious, round} from './lib/cabal.mjs';
 import {judgeClusters, writeRecap} from './lib/brain.mjs';
 import {createTelegram, esc} from './lib/telegram.mjs';
@@ -22,6 +25,7 @@ const freshState = () => ({
   runs: {}, watch: [], buys: [], overlaps: {}, coins: [], queue: [],
   analysis: {coinsAnalyzed: 0, bots: [], repeaters: [], clusters: []},
   judged: [], alerts: [], recaps: [], log: [],
+  desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null},
   credits: {month: '', used: 0, day: '', today: 0, lastRun: 0},
 });
 
@@ -43,7 +47,7 @@ function compactCoin(c){
   const r = v => round(v, 6);
   return {
     mint: c.mint, symbol: c.symbol, name: c.name, viaPump: c.viaPump, migrated: c.migrated, dev: c.dev,
-    createSlot: c.createSlot, createTime: c.createTime, supply: c.supply, decimals: c.decimals, priceSol: c.priceSol, at: c.at, diag: c.diag,
+    createSlot: c.createSlot, createTime: c.createTime, supply: c.supply, decimals: c.decimals, priceSol: c.priceSol, at: c.at, diag: c.diag, desk: c.desk,
     buyers: c.buyers.map(b => ({
       owner: b.owner, rank: b.rank, slotDelta: b.slotDelta, secs: b.secs, t: b.t, firstPrice: b.firstPrice,
       pos: b.pos ? {cost: r(b.pos.cost), bought: r(b.pos.bought), proceeds: r(b.pos.proceeds), sold: r(b.pos.sold), moved: r(b.pos.moved),
@@ -54,8 +58,31 @@ function compactCoin(c){
   };
 }
 
+/* One status card per desk agent, built from what's in memory. */
+function deskAgents(state, creditsThisRun){
+  const ev = a => state.desk.events.find(e => e.agent === a);
+  const v0 = state.desk.verdicts[0];
+  const coin0 = v0 && state.coins.find(c => c.mint === v0.mint);
+  const vet = coin0?.desk?.vet, soc = coin0?.desk?.social;
+  const pipe = state.desk.pipeline;
+  const recent = state.desk.verdicts.filter(v => v.t > Date.now() - 86400e3);
+  const clean = recent.filter(v => v.verdict === 'CLEAN').length;
+  const groups = (state.analysis.clusters || []).filter(c => ['cabal', 'smart_money'].includes(c.verdict));
+  const buys24 = state.buys.filter(b => b.t * 1000 > Date.now() - 86400e3).length;
+  const card = (agent, role, o) => ({agent, role, last: ev(agent)?.text || '', t: ev(agent)?.t || 0, ...o});
+  return {
+    chief: card('chief', 'never takes a position', {big: v0 ? `$${v0.symbol} · ${v0.verdict}` : 'no verdict yet', metric: 'clean today', value: recent.length ? clean / recent.length : null, small: `${clean} clean · ${recent.length - clean} flagged (24h)`}),
+    scan: card('scan', 'finding what moves', {big: pipe ? `${pipe.rows.filter(r => r.free === 'PASS').length}/${pipe.seen} pass` : '—', metric: 'free_kill survivors', value: pipe && pipe.seen ? pipe.rows.filter(r => r.free === 'PASS').length / Math.min(pipe.seen, 14) : null}),
+    vet: card('vet', 'chain risk, is it real', {big: vet ? vet.worst : '—', metric: vet ? `${vet.worst} · $${v0.symbol}` : 'no coin vetted', value: vet ? vet.score : null}),
+    social: card('social', "the project's X account", {big: soc ? (soc.handle ? '@' + soc.handle : soc.kind) : '—', metric: soc ? `${soc.worst} · $${v0.symbol}` : 'no account read', value: soc ? soc.score : null}),
+    hunt: card('hunt', 'who moves together', {big: `${groups.length} group${groups.length === 1 ? '' : 's'}`, metric: `${state.analysis.coinsAnalyzed || 0} coins in memory`, value: groups[0]?.confidence != null ? groups[0].confidence / 100 : null}),
+    watch: card('watch', 'whale radar', {big: `${state.watch.length} wallets`, metric: `${buys24} buys in 24h`, value: state.watch.length ? Math.min(1, buys24 / Math.max(1, state.watch.length * 2)) : null}),
+    credits: creditsThisRun,
+  };
+}
+
 export async function runAgent({task = 'watch', env = process.env, fetchImpl = fetch, statePath, configPath, gapMs} = {}){
-  const cfg = merge(JSON.parse(await readFile(configPath || resolve(HERE, 'config.json'), 'utf8')), {});
+  const cfg = merge({desk: {...DEFAULT_THRESHOLDS, socialChecksPerRun: 6}}, JSON.parse(await readFile(configPath || resolve(HERE, 'config.json'), 'utf8')));
   statePath = statePath || resolve(env.STATE_FILE || 'state/agent.json');
   let state = freshState();
   try { state = merge(freshState(), JSON.parse(await readFile(statePath, 'utf8'))); } catch {}
@@ -74,6 +101,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
     state.alerts = state.alerts.slice(0, 200);
     if(html) outbox.push(html);
   }
+  function deskEvent(agent, text){ state.desk.events.unshift({t: Date.now(), agent, text}); state.desk.events = state.desk.events.slice(0, 80); }
   const labelOf = a => state.watch.find(w => w.a === a)?.label || short(a);
   const isWatched = a => state.watch.some(w => w.a === a);
 
@@ -159,6 +187,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
     for(const b of fresh){ b.sym = info[b.mint]?.symbol || meta[b.mint]?.symbol || short(b.mint); b.mcap = info[b.mint]?.mcap || 0; }
     state.buys = [...fresh, ...state.buys].filter(b => (now / 1000 - b.t) < 7 * 86400).slice(0, 1000);
     note(`${fresh.length} new buy${fresh.length > 1 ? 's' : ''}.`);
+    for(const b of fresh.slice(0, 4)) deskEvent('watch', `${labelOf(b.w)} bought $${b.sym} · ${solTxt(b.sol)}`);
 
     // per-buy pings, capped per wallet so a bot wallet can't flood the chat
     const perWallet = new Map();
@@ -180,6 +209,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       const n = s.wallets.size;
       if(n < wc.overlapMin || n <= (state.overlaps[s.mint]?.count || 0)) continue;
       state.overlaps[s.mint] = {count: n, t: now, sym: s.sym};
+      deskEvent('watch', `${n} watched wallets are in $${s.sym}`);
       const mcap = info[s.mint]?.mcap || s.mcap;
       alert('overlap', `${n} watched wallets in $${s.sym}`, [...s.wallets].map(labelOf).join(', '),
         `🔥 <b>Overlap: ${n} watched wallets in $${esc(s.sym)}</b>${mcap ? ' · ' + usd(mcap) + ' mcap' : ''}\n${[...s.wallets].map(a => esc(labelOf(a))).join(', ')}\n${chart(s.mint)} · <code>${s.mint}</code>`,
@@ -188,33 +218,75 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   }
 
   /* ---------- scan: fresh runners -> first buyers -> cabal hunt ---------- */
+  /* SOCIAL: the project's X account. Remembers every handle so a reused one gets caught. */
+  async function social(item){
+    const seen = new Map(Object.entries(state.desk.handles).map(([h, ms]) => [h, new Set(ms)]));
+    const s = await checkSocial(item, {token: env.X_BEARER_TOKEN, fetchImpl, seenHandles: seen, now});
+    if(s.handle){ const h = s.handle.toLowerCase(); state.desk.handles[h] = [...new Set([...(state.desk.handles[h] || []), item.mint])].slice(-10); }
+    delete s.account?.bio;
+    deskEvent('social', `$${item.symbol}: ${s.line}${s.score >= 0.5 ? ` · ${s.worst} ${s.score}` : ''}`);
+    return s;
+  }
+
+  /* SCAN the first buyers -> VET the chain -> CHIEF's verdict */
   async function scanCoins(list){
-    const sc = cfg.scan;
+    const sc = cfg.scan, soft = cfg.desk.soft;
     sol.budget(Math.min(sc.creditBudgetPerRun, Math.max(0, creditsLeft())));
-    let scanned = 0;
+    const done = [];
+    const cabalWallets = new Set(state.judged.filter(j => j.verdict === 'cabal' && j.confidence >= cfg.cabal.alertMinConfidence).flatMap(j => j.wallets));
     for(const item of list){
       try {
+        deskEvent('scan', `reading the first ${sc.buyersPerCoin} buyers of $${item.symbol || short(item.mint)}`);
         const res = await sol.scanCoin(item.mint, sc.buyersPerCoin, {meta: {symbol: item.symbol, name: item.name}, maxPagesPump: sc.maxPagesPump, maxPagesOther: sc.maxPagesOther});
-        state.coins = [compactCoin(res), ...state.coins.filter(c => c.mint !== item.mint)];
         state.queue = state.queue.filter(m => m !== item.mint);
-        scanned++;
-        if(res.skipped) note(`$${res.symbol} skipped: ${res.skipped}`);
-        else {
-          const read = res.buyers.filter(b => b.pos && b.pos.status !== 'unknown');
-          const wins = read.filter(b => b.pos.pnl > 0.0005).length;
-          note(`Scanned $${res.symbol}: ${wins}/${read.length} early wallets in profit.`);
-          alert('coin', `Scanned $${res.symbol}`, `${wins}/${read.length} early wallets in profit`, null, {mint: res.mint});
+        if(res.skipped){
+          note(`$${res.symbol} skipped: ${res.skipped}`);
+          state.coins = [compactCoin(res), ...state.coins.filter(c => c.mint !== item.mint)];
+          continue;
         }
+        const read = res.buyers.filter(b => b.pos && b.pos.status !== 'unknown');
+        const wins = read.filter(b => b.pos.pnl > 0.0005).length;
+        note(`Scanned $${res.symbol}: ${wins}/${read.length} early wallets in profit.`);
+
+        const s = item.social || (item.socials ? await social(item) : null);
+        const v = await vetChain(res, sol.rpc, {cabalWallets});
+        deskEvent('vet', `$${res.symbol}: ${v.line || 'nothing to flag'}`);
+        res.desk = {social: s, vet: v, mcap: item.mcap || 0, vol24: item.vol24 || 0, wins, read: read.length, t: now};
+        state.coins = [compactCoin(res), ...state.coins.filter(c => c.mint !== item.mint)];
+        done.push(res);
       } catch(e){
         if(e instanceof BudgetError){ note('Scan budget used up for this run; the rest waits for next run.'); break; }
         note(`$${item.symbol || short(item.mint)} failed: ${e.message}`);
       }
     }
     sol.budget(null);
-    // keep the newest scans; never drop the ones that feed a live cluster first
     const ok = state.coins.filter(c => !c.skipped), skipped = state.coins.filter(c => c.skipped);
     state.coins = [...ok.slice(0, sc.keepCoins), ...skipped.slice(0, 100)];
-    return scanned;
+    return done;
+  }
+
+  /* CHIEF: runs after the hunt, so a cabal found this run counts against the coins it was early on */
+  function judgeCoins(done){
+    const soft = cfg.desk.soft;
+    const cabalWallets = new Set(state.judged.filter(j => j.verdict === 'cabal' && j.confidence >= cfg.cabal.alertMinConfidence).flatMap(j => j.wallets));
+    for(const res of done){
+      const d = res.desk, v = d.vet, s = d.social;
+      const n = res.buyers.filter(b => cabalWallets.has(b.owner)).length;
+      if(n){ v.facts.cabalWallets = n; v.flags.cabal_in_early = Math.round(Math.min(1, n / 4) * 100) / 100; if(!/cabal wallets/.test(v.line)) v.line += ` · ${n} cabal wallets early`; }
+      const chief = chiefVerdict({social: s, vet: v}, soft);
+      Object.assign(d, {verdict: chief.verdict, reasons: chief.reasons});
+      const stored = state.coins.find(c => c.mint === res.mint); if(stored) stored.desk = d;
+      const row = state.desk.pipeline?.rows?.find(r => r.mint === res.mint); if(row) row.chain = chief.verdict;
+      deskEvent('chief', `$${res.symbol} is ${chief.verdict}${chief.reasons[0] ? ` (${chief.reasons[0]})` : ''}`);
+      state.desk.verdicts = [{t: now, mint: res.mint, symbol: res.symbol, verdict: chief.verdict, reasons: chief.reasons, social: s?.line || '', vet: v.line, mcap: d.mcap, wins: d.wins, read: d.read},
+        ...state.desk.verdicts.filter(x => x.mint !== res.mint)].slice(0, 40);
+      const icon = chief.verdict === 'CLEAN' ? '✅' : '⚠️';
+      alert('verdict', `$${res.symbol} · ${chief.verdict}`, [v.line, s?.line, `${d.wins}/${d.read} early wallets in profit`].filter(Boolean).join('\n'),
+        `🧑‍⚖️ <b>$${esc(res.symbol)}</b> · ${icon} <b>${chief.verdict}</b>${d.mcap ? ' · ' + usd(d.mcap) + ' mcap' : ''}\n` +
+        `VET: ${esc(v.line || 'nothing flagged')}\n` + (s ? `SOCIAL: ${esc(s.line)}\n` : '') +
+        (chief.reasons.length ? `Why: ${esc(chief.reasons.join(', '))}\n` : '') +
+        `${d.wins}/${d.read} early wallets in profit\n${chart(res.mint)} · <code>${res.mint}</code>`, {mint: res.mint});
+    }
   }
 
   async function hunt(){
@@ -243,6 +315,8 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       }
     }
     state.analysis = {at: now, coinsAnalyzed: res.coinsAnalyzed, bots: res.bots.slice(0, 50), repeaters: res.repeaters.slice(0, 40), clusters};
+    const topC = clusters.find(c => c.verdict === 'cabal' || c.verdict === 'smart_money');
+    deskEvent('hunt', topC ? `${topC.size} wallets moving together on ${topC.coins.length} coins · ${topC.verdict} ${topC.confidence ?? ''}%` : `${res.repeaters.length} repeat wallets across ${res.coinsAnalyzed} coins, no group yet`);
     note(`Cabal hunt: ${res.coinsAnalyzed} coins, ${res.repeaters.length} repeat wallets, ${res.clusters.length} groups, ${verdicts.length} judged.`);
 
     // auto-watch: the strongest wallets go on the watchlist so their next buys get pinged
@@ -264,18 +338,38 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       `➕ Auto-watching ${added.length} new wallet${added.length > 1 ? 's' : ''} from today's hunt: ${added.slice(0, 8).map(gmgn).join(' · ')}`, {wallets: added});
   }
 
+  /* the filter: free_kill -> social_kill -> chain (scan + vet) -> verdict. The order is the whole point. */
   async function scanJob(){
-    if(creditsLeft() < cfg.scan.creditBudgetPerRun){ note('Monthly credit budget nearly used; skipping discovery.'); return 0; }
+    if(creditsLeft() < cfg.scan.creditBudgetPerRun){ note('Monthly credit budget nearly used; skipping discovery.'); return []; }
     const queued = await queuedItems(state.queue);
-    const exclude = new Set([...state.coins.map(c => c.mint), ...state.queue]);
-    const found = await discover({...cfg.scan, exclude, limit: cfg.scan.coinsPerRun}, fetchImpl);
-    note(`Discovery: ${found.length} fresh runner${found.length === 1 ? '' : 's'} (${found.map(f => '$' + f.symbol).join(', ') || 'none'}).`);
-    return scanCoins([...queued, ...found]);
+    const exclude = new Set([...state.coins.map(c => c.mint), ...state.queue, ...Object.keys(state.desk.killed || {})]);
+    const seen = await candidates({exclude}, fetchImpl);
+    const pipe = seen.map(c => ({c, free: freeKill(c, cfg.desk.hard, now)}));
+    const alive = pipe.filter(p => p.free.pass).sort((a, b) => priority(b.c) - priority(a.c));
+    deskEvent('scan', `${seen.length} coins on the tape, ${alive.length} survive free_kill`);
+    const picks = [];
+    for(const p of alive.slice(0, cfg.desk.socialChecksPerRun)){
+      p.social = await social(p.c);
+      p.socialKill = socialKill(p.social, cfg.desk.soft);
+      if(!p.socialKill.pass){ state.desk.killed = {...(state.desk.killed || {}), [p.c.mint]: now}; }
+      if(p.socialKill.pass && picks.length < cfg.scan.coinsPerRun){ p.chain = true; picks.push({...p.c, social: p.social}); }
+    }
+    note(`Discovery: ${seen.length} seen, ${alive.length} passed free_kill, scanning ${picks.map(f => '$' + f.symbol).join(', ') || 'none'}.`);
+    const done = await scanCoins([...queued, ...picks]);
+    const scannedNow = new Set(done.map(r => r.mint));
+    state.desk.pipeline = {t: now, seen: seen.length, rows: pipe.sort((a, b) => (b.chain ? 3 : b.social ? 2 : b.free.pass ? 1 : 0) - (a.chain ? 3 : a.social ? 2 : a.free.pass ? 1 : 0) || priority(b.c) - priority(a.c)).slice(0, 14).map(p => ({
+      mint: p.c.mint, symbol: p.c.symbol, mcap: p.c.mcap, vol24: p.c.vol24,
+      free: p.free.pass ? 'PASS' : p.free.reason, social: p.social ? (p.socialKill.pass ? 'PASS' : p.socialKill.reason) : null,
+      chain: p.chain ? (scannedNow.has(p.c.mint) ? 'SCANNED' : 'BUDGET') : null,
+    }))};
+    // forget social kills after 3 days so the list stays small
+    for(const [m, t] of Object.entries(state.desk.killed || {})) if(now - t > 3 * DAY) delete state.desk.killed[m];
+    return done;
   }
   async function queuedItems(mints){
     if(!mints.length) return [];
     const info = await pairInfo(mints, fetchImpl);
-    return mints.map(m => ({mint: m, symbol: info[m]?.symbol, name: info[m]?.name}));
+    return mints.map(m => ({mint: m, symbol: info[m]?.symbol || short(m), name: info[m]?.name, ...(info[m] || {})}));
   }
 
   /* ---------- daily recap ---------- */
@@ -293,6 +387,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
           bestEarlyWalletPnlSol: best ? round(best.pos.pnl, 2) : 0, stillHolding: read.filter(b => b.pos.held > 0).length};
       }),
       clusters: state.analysis.clusters.filter(c => c.verdict && c.verdict !== 'noise').slice(0, 5).map(c => ({verdict: c.verdict, confidence: c.confidence, size: c.size, coins: c.coins.length, symbols: c.coins.map(x => x.symbol), why: c.why})),
+      verdicts: state.desk.verdicts.filter(v => v.t >= since).slice(0, 10).map(v => ({symbol: v.symbol, verdict: v.verdict, why: v.reasons, vet: v.vet, social: v.social})),
       topRepeaters: state.analysis.repeaters.slice(0, 5).map(r => ({wallet: short(r.owner), coins: r.hits, pnlSol: r.pnl, wins: r.wins})),
       creditsToday: state.credits.today + sol.credits,
     };
@@ -316,8 +411,8 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   const wants = t => task === t || task === 'all';
   if(!state.paused){
     if(wants('watch')) jobs.push(['watch', watchWallets]);
-    if(wants('scan')) jobs.push(['scan', async () => { await scanJob(); await hunt(); }]);
-    else if(state.queue.length) jobs.push(['scan-queue', async () => { if(await scanCoins(await queuedItems(state.queue.slice(0, 2)))) await hunt(); }]);
+    if(wants('scan')) jobs.push(['scan', async () => { const done = await scanJob(); await hunt(); judgeCoins(done); }]);
+    else if(state.queue.length) jobs.push(['scan-queue', async () => { const done = await scanCoins(await queuedItems(state.queue.slice(0, 2))); if(done.length){ await hunt(); judgeCoins(done); } }]);
   }
   if(wants('recap') || state.forceRecap){ delete state.forceRecap; jobs.push(['recap', recapJob]); }
   for(const [name, fn] of jobs) await run(name, fn);
@@ -326,6 +421,8 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   if(outbox.length) await tg.send(outbox.join('\n\n'));
 
   state.rpc = {at: now, task, ...sol.stats};
+  state.desk.thresholds = {hard: cfg.desk.hard, soft: cfg.desk.soft};
+  state.desk.agents = deskAgents(state, sol.credits);
   state.credits.used += sol.credits; state.credits.today += sol.credits; state.credits.lastRun = sol.credits;
   state.updatedAt = Date.now();
   note(`Done · ${sol.credits.toLocaleString()} credits this run.`);

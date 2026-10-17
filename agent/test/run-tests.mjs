@@ -14,7 +14,8 @@ let sigN = 0; const newSig = () => 'sig' + (++sigN).toString().padStart(6, '0') 
 
 /* ---------- fake chain ---------- */
 const sigsByAddr = new Map(), txs = new Map(), accounts = new Map(), tokAcct = new Map();
-const acctOf = (o, m) => { const k = o + m; if(!tokAcct.has(k)) tokAcct.set(k, rand()); return tokAcct.get(k); };
+const acctOwner = new Map();
+const acctOf = (o, m) => { const k = o + m; if(!tokAcct.has(k)){ const a = rand(); tokAcct.set(k, a); acctOwner.set(a, {owner: o, mint: m}); } return tokAcct.get(k); };
 const holdings = new Map(); // owner|mint -> amount
 function addSig(addr, s){ const l = sigsByAddr.get(addr) || []; l.push(s); sigsByAddr.set(addr, l); }
 function trade({owner, mint, bc, slot, t, solAmt, tokAmt}){ // tokAmt > 0 buy, < 0 sell
@@ -47,14 +48,18 @@ async function makeCoin(sym, cabal, extraBuyers, launchAgo){
   cabal.forEach((w, i) => trade({owner: w, mint: m, bc, slot: slot0 + 900, t: t0 + 600 + i * 20, solAmt: 9, tokAmt: -5e7}));
   const data = Buffer.alloc(49); data.writeBigUInt64LE(800000000000000n, 8); data.writeBigUInt64LE(40000000000n, 16); data[48] = 0;
   accounts.set(bc, data.toString('base64'));
-  return {mint: m, sym, bc, createdAt: (t0) * 1000};
+  return {mint: m, sym, bc, dev, createdAt: (t0) * 1000};
 }
 
 const W1 = rand(), W2 = rand();
 const cabal = [rand(), rand(), rand()];
 const coins = [];
 for(const [i, s] of ['ALPHA', 'BETA', 'GAMMA'].entries()) coins.push(await makeCoin(s, cabal, Array.from({length: 6}, rand), 3600 * (i + 2)));
-coins.forEach(c => { c.symbol = c.sym; });
+coins.forEach((c, i) => { c.symbol = c.sym; c.handle = c.sym.toLowerCase() + 'coin'; c.vol = 900000 - i * 1000; c.liqUsd = 60000; });
+// DELTA reuses ALPHA's X handle (recycled account), TINY has no liquidity: both must die before any credits are spent
+const delta = await makeCoin('DELTA', [], Array.from({length: 3}, rand), 3600 * 3); Object.assign(delta, {symbol: 'DELTA', handle: 'alphacoin', vol: 500000, liqUsd: 60000});
+const tiny = await makeCoin('TINY', [], Array.from({length: 3}, rand), 3600 * 3); Object.assign(tiny, {symbol: 'TINY', handle: 'tinycoin', vol: 800000, liqUsd: 900});
+const listed = [...coins, delta, tiny];
 
 /* ---------- fake services ---------- */
 const PAGE_CAP = 4;
@@ -77,15 +82,26 @@ async function fakeFetch(url, opts = {}){
     if(method === 'getTokenSupply') return json({result: {value: {uiAmount: 1e9, decimals: 6}}});
     if(method === 'getAccountInfo'){ const d = accounts.get(params[0]); return json({result: d ? {value: {data: [d, 'base64']}} : {value: null}}); }
     if(method === 'getTokenAccountBalance') return json({result: {value: {uiAmount: 0}}});
+    if(method === 'getTokenAccountsByOwner'){
+      const [owner, {mint}] = params; const amount = holdings.get(owner + '|' + mint) || 0;
+      return json({result: {value: amount ? [{account: {data: {parsed: {info: {tokenAmount: {uiAmount: amount}}}}}}] : []}});
+    }
+    if(method === 'getTokenLargestAccounts'){
+      const mint = params[0];
+      const list = [...holdings].filter(([k, v]) => k.endsWith('|' + mint) && v > 0).map(([k, v]) => ({address: acctOf(k.split('|')[0], mint), uiAmount: v}));
+      return json({result: {value: list.sort((a, b) => b.uiAmount - a.uiAmount).slice(0, 20)}});
+    }
+    if(method === 'getMultipleAccounts') return json({result: {value: params[0].map(a => ({data: {parsed: {info: {owner: acctOwner.get(a)?.owner}}}}))}});
     if(method === 'getAssetBatch') return json({result: params.ids.map(id => ({id, content: {metadata: {symbol: 'X', name: 'X'}}}))});
     return json({error: {message: 'unknown method ' + method}});
   }
   if(url.includes('api.dexscreener.com')){
-    if(url.includes('token-boosts') || url.includes('token-profiles')) return json(coins.map(c => ({chainId: 'solana', tokenAddress: c.mint})));
+    if(url.includes('token-boosts') || url.includes('token-profiles')) return json(listed.map(c => ({chainId: 'solana', tokenAddress: c.mint})));
     const mints = url.split('/').pop().split(',');
-    const pairs = coins.filter(c => mints.includes(c.mint)).map(c => ({chainId: 'solana', dexId: 'pumpswap', baseToken: {address: c.mint, symbol: c.sym, name: c.sym},
+    const pairs = listed.filter(c => mints.includes(c.mint)).map(c => ({chainId: 'solana', dexId: 'pumpswap', baseToken: {address: c.mint, symbol: c.sym, name: c.sym},
       quoteToken: {address: 'So11111111111111111111111111111111111111112', symbol: 'SOL'}, priceUsd: '0.0005', priceNative: '0.0000025',
-      marketCap: 500000, liquidity: {usd: 60000}, volume: {h24: 900000}, priceChange: {h24: 120}, pairCreatedAt: c.createdAt}));
+      marketCap: 500000, liquidity: {usd: c.liqUsd}, volume: {h24: c.vol}, priceChange: {h24: 120}, txns: {h24: {buys: 900, sells: 400}}, pairCreatedAt: c.createdAt,
+      info: {socials: [{type: 'twitter', url: `https://x.com/${c.handle}`}], websites: []}}));
     if(url.includes('/latest/dex/tokens/')) pairs.push({chainId: 'solana', baseToken: {address: 'So11111111111111111111111111111111111111112'}, quoteToken: {symbol: 'USDC'}, priceUsd: '200', liquidity: {usd: 1e8}});
     return json(url.includes('/tokens/v1/') ? pairs : {pairs});
   }
@@ -98,6 +114,10 @@ async function fakeFetch(url, opts = {}){
       return json({content: [{type: 'tool_use', name: tool, input: {verdicts: ids.map(id => ({id, verdict: 'cabal', confidence: 88, why: 'Same-block buys and synced exits on every coin.', alert: 'Same 3 wallets aped the launch block and dumped together'}))}}], usage: {}});
     }
     return json({content: [{type: 'tool_use', name: tool, input: {headline: 'Cabal ran ALPHA, BETA and GAMMA', body: 'Test recap body.'}}], usage: {}});
+  }
+  if(url.startsWith('https://api.fxtwitter.com/')){
+    const h = url.split('/').pop();
+    return json({code: 200, user: {screen_name: h, followers: 4200, tweets: 85, description: 'the official ' + h, joined: new Date(Date.now() - 3 * 86400e3).toUTCString()}});
   }
   if(url.startsWith('https://api.telegram.org')){
     const method = url.split('/').pop(), body = JSON.parse(opts.body);
@@ -151,6 +171,20 @@ assert.equal(top.verdict, 'cabal'); assert.equal(top.confidence, 88);
 assert.ok(s.analysis.repeaters.some(r => r.owner === cabal[0] && r.hits === 3));
 assert.ok(cabal.every(a => s.watch.some(w => w.a === a && w.by === 'agent')), 'cabal auto-watched');
 assert.match(sent.join('\n'), /CABAL/);
+// the desk: free_kill -> social_kill -> chain -> verdict
+const rows = s.desk.pipeline.rows;
+assert.equal(rows.find(r => r.symbol === 'TINY').free, 'thin_liquidity');
+assert.equal(rows.find(r => r.symbol === 'DELTA').social, 'recycled_account');
+assert.ok(rows.filter(r => r.chain).length === 3, JSON.stringify(rows));
+const va = scanned.find(c => c.symbol === 'ALPHA').desk;
+assert.ok(va.vet.facts.devPct > 0 && va.vet.facts.devPct < 0.05, 'dev bag read: ' + JSON.stringify(va.vet.facts));
+assert.equal(va.social.handle, 'alphacoin');
+assert.match(va.social.line, /4\.2K followers/);
+assert.ok(s.desk.verdicts.length === 3 && s.desk.verdicts.every(v => v.verdict === 'CABAL RUN'), 'cabal found this run must flag its coins: ' + JSON.stringify(s.desk.verdicts));
+assert.ok(rows.filter(r => r.chain === 'CABAL RUN').length === 3);
+assert.ok(['chief', 'scan', 'vet', 'social', 'hunt', 'watch'].every(a => s.desk.agents[a]), 'agent cards');
+assert.ok(s.desk.events.some(e => e.agent === 'social') && s.desk.events.some(e => e.agent === 'vet'));
+assert.match(sent.join('\n'), /🧑‍⚖️/);
 const cabalProfit = scanned[0].buyers.find(b => b.owner === cabal[0]).pos;
 assert.equal(cabalProfit.status, 'sold'); assert.ok(Math.abs(cabalProfit.pnl - 7) < 1e-6, 'pnl 9 - 2 = 7 SOL, got ' + cabalProfit.pnl);
 const judgeCalls = claudeCalls.length;

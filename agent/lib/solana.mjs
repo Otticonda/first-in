@@ -22,6 +22,7 @@ export async function findPda(seeds, program){
   }
   throw new Error('no PDA');
 }
+export const isWalletKey = a => { try { return onCurve(b58decode(a)); } catch { return false; } };
 export function isAddr(s){ try { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s) && b58decode(s).length===32; } catch { return false; } }
 export const bondingCurveOf = mint => findPda([new TextEncoder().encode('bonding-curve'), b58decode(mint)], PUMP);
 

@@ -11,13 +11,31 @@
   "scan": {
     "coinsPerRun": 2,
     "buyersPerCoin": 30,
-    "minMcapUsd": 250000,
-    "maxAgeHours": 72,
-    "minLiquidityUsd": 15000,
     "maxPagesPump": 300,
     "maxPagesOther": 150,
     "creditBudgetPerRun": 1500,
     "keepCoins": 50
+  },
+  "desk": {
+    "hard": {
+      "min_age_minutes": 15,
+      "max_age_hours": 72,
+      "min_liquidity_usd": 15000,
+      "min_volume_h24": 40000,
+      "min_mcap_usd": 250000,
+      "min_trades_h24": 150
+    },
+    "soft": {
+      "recycled_account": 0.7,
+      "no_socials": 0.7,
+      "ghost_account": 0.9,
+      "dev_still_loaded": 0.6,
+      "top10_concentration": 0.7,
+      "sniped_launch": 0.8,
+      "cabal_in_early": 0.5,
+      "early_bags_loaded": 0.9
+    },
+    "socialChecksPerRun": 6
   },
   "cabal": {
     "minSharedCoins": 2,
