@@ -169,18 +169,30 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
     } catch(e){ if(passThrough(e)) throw e; return null; }
   }
   async function oldestSigs(address, maxPages){
-    let before, prev = [], cur = [], pages = 0, total = 0; const sizes = [];
+    // Page backwards until the RPC returns nothing. A short page is NOT the end:
+    // Helius can return fewer than `limit` while older history still exists.
+    let before, buf = [], pages = 0, total = 0; const sizes = [];
     while(pages < maxPages){
       const opts = {limit:1000}; if(before) opts.before = before;
       const r = await rpc('getSignaturesForAddress', [address, opts]);
-      pages++; total += r.length; prev = cur; cur = r; if(sizes.length < 8) sizes.push(r.length);
-      if(r.length < 1000) return {sigs: [...prev, ...cur].reverse(), total, complete: true, sizes};
+      pages++; if(sizes.length < 8) sizes.push(r.length);
+      if(!r.length) return {sigs: buf.slice().reverse(), total, complete: true, sizes, pages};
+      total += r.length;
+      buf = buf.length + r.length > 2000 ? [...buf, ...r].slice(-2000) : [...buf, ...r];
       before = r[r.length-1].signature;
     }
-    return {sigs: [], total, complete: false, sizes};
+    return {sigs: [], total, complete: false, sizes, pages};
   }
   async function positionFor(owner, acct, mint, c){
-    const sigs = (await rpc('getSignaturesForAddress', [acct, {limit:100}])).filter(s => !s.err);
+    // up to 100 signatures, paging in case the RPC returns short pages
+    const all = []; let before;
+    for(let p = 0; p < 6 && all.length < 100; p++){
+      const opts = {limit: 100 - all.length}; if(before) opts.before = before;
+      const r = await rpc('getSignaturesForAddress', [acct, opts]);
+      if(!r.length) break;
+      all.push(...r); before = r[r.length-1].signature;
+    }
+    const sigs = all.filter(s => !s.err);
     const txs = await pool(sigs, 6, s => getTx(s.signature));
     let cost = 0, bought = 0, curveCost = 0, curveTok = 0, proceeds = 0, sold = 0, moved = 0, received = 0, buys = 0, sells = 0, lastSell = 0;
     for(let k=0; k<txs.length; k++){
@@ -202,7 +214,7 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
         else moved += -tok;
       }
     }
-    const partial = sigs.length >= 100;
+    const partial = all.length >= 100;
     let held = Math.max(0, bought + received - sold - moved);
     if(partial){ try { held = ui({uiTokenAmount: (await rpc('getTokenAccountBalance', [acct])).value}); } catch(e){ if(passThrough(e)) throw e; held = 0; } }
     const value = held * (c.priceSol || 0);
@@ -224,8 +236,8 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
     const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
     const viaPump = probe.length > 0;
     const addr = viaPump ? bc : mint;
-    const {sigs, total, complete, sizes} = await oldestSigs(addr, viaPump ? maxPagesPump : maxPagesOther);
-    const diag = {addr: viaPump ? 'curve' : 'mint', pageSizes: sizes, total, errSigs: sigs.filter(s => s.err).length, txRead: 0, txNull: 0, txNoBuy: 0};
+    const {sigs, total, complete, sizes, pages} = await oldestSigs(addr, viaPump ? maxPagesPump : maxPagesOther);
+    const diag = {addr: viaPump ? 'curve' : 'mint', pageSizes: sizes, pages, total, errSigs: sigs.filter(s => s.err).length, txRead: 0, txNull: 0, txNoBuy: 0};
     if(!complete) return {mint, symbol: sym, name: meta?.name||'', skipped: `too many transactions (${total.toLocaleString()}+) to reach launch`, at: Date.now(), diag};
     const okSigs = sigs.filter(s => !s.err);
     diag.okSigs = okSigs.length;

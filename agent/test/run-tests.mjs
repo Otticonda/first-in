@@ -57,6 +57,7 @@ for(const [i, s] of ['ALPHA', 'BETA', 'GAMMA'].entries()) coins.push(await makeC
 coins.forEach(c => { c.symbol = c.sym; });
 
 /* ---------- fake services ---------- */
+const PAGE_CAP = 4;
 const sent = [], claudeCalls = [];
 let tgUpdates = [];
 const json = (o, status = 200) => ({ok: status < 400, status, json: async () => o});
@@ -69,7 +70,8 @@ async function fakeFetch(url, opts = {}){
       let list = (sigsByAddr.get(addr) || []).slice().sort((a, b) => b.slot - a.slot || (a.signature < b.signature ? 1 : -1));
       if(o.before){ const i = list.findIndex(s => s.signature === o.before); list = list.slice(i + 1); }
       if(o.until){ const i = list.findIndex(s => s.signature === o.until); if(i >= 0) list = list.slice(0, i); }
-      return json({result: list.slice(0, o.limit || 1000)});
+      // real Helius can return short pages; simulate it so the scanner must keep paging
+      return json({result: list.slice(0, Math.min(o.limit || 1000, PAGE_CAP))});
     }
     if(method === 'getTransaction') return json({result: txs.get(params[0]) || null});
     if(method === 'getTokenSupply') return json({result: {value: {uiAmount: 1e9, decimals: 6}}});
