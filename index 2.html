@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
+</head>
+<body>
+<title>First In</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one narrow working column, a sticky top bar with the credit meter, two tabs (Scan / Watchlist); data set in mono like a block explorer. */
+:root{
+  --bg:#F3F5F2; --surface:#FFFFFF; --sunk:#E8ECE7; --line:#D3DAD3;
+  --fg:#121816; --muted:#5C6A65; --accent:#0B7A62; --accent-ink:#FFFFFF; --accent-soft:#D8EEE6;
+  --warn:#9A6200; --warn-soft:#F6E9CC; --good:#1F7A2E; --good-soft:#DCF0DD; --bad:#B23A24; --bad-soft:#F6DDD6; --hot:#5B3FD0; --hot-soft:#E6E0FA;
+  --f-display:"Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
+  --f-body:"Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D1211; --surface:#151C1A; --sunk:#1C2522; --line:#2A3632;
+  --fg:#E4ECE8; --muted:#8FA19A; --accent:#3ACFA5; --accent-ink:#06231B; --accent-soft:#163A30;
+  --warn:#E8B44C; --warn-soft:#3A2D10; --good:#6FD47E; --good-soft:#173A1D; --bad:#F08A72; --bad-soft:#3E1D16; --hot:#A996FF; --hot-soft:#2A2350; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D1211; --surface:#151C1A; --sunk:#1C2522; --line:#2A3632;
+  --fg:#E4ECE8; --muted:#8FA19A; --accent:#3ACFA5; --accent-ink:#06231B; --accent-soft:#163A30;
+  --warn:#E8B44C; --warn-soft:#3A2D10; --good:#6FD47E; --good-soft:#173A1D; --bad:#F08A72; --bad-soft:#3E1D16; --hot:#A996FF; --hot-soft:#2A2350; color-scheme:dark}
+
+html,body{background:var(--bg)}
+body{color:var(--fg);font:15px/1.5 var(--f-body);}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px;display:flex;flex-direction:column;gap:18px}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar-in{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px;display:flex;align-items:center;gap:12px}
+.brand{font:800 22px/1 var(--f-display);letter-spacing:-.02em;display:flex;align-items:baseline;gap:8px}
+.brand small{font:500 11px/1 var(--f-mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.spacer{flex:1}
+.meter{font:12px/1.2 var(--f-mono);color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.meter b{color:var(--fg);font-weight:600}
+button,.btn{font:600 14px/1 var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+button:hover,.btn:hover{border-color:var(--muted)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.primary:disabled{opacity:.5;cursor:default}
+button.ghost{background:transparent;border-color:transparent;padding:8px 10px}
+button.sm,.btn.sm{padding:7px 10px;font-size:13px}
+input,textarea{font:14px/1.4 var(--f-mono);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;box-sizing:border-box}
+textarea{min-height:110px;resize:vertical}
+label{font:600 12px/1.2 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+.hint{color:var(--muted);font-size:13px;margin:6px 0 0}
+a{color:var(--accent)}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+h2{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row > *{min-width:0}
+.tabs{display:flex;gap:4px;background:var(--sunk);border-radius:10px;padding:4px}
+.tabs button{flex:1;border:0;background:transparent;color:var(--muted);justify-content:center}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.count{font:600 11px/1 var(--f-mono);background:var(--accent-soft);color:var(--accent);border-radius:99px;padding:3px 7px}
+.intro{display:flex;flex-direction:column;gap:6px;padding-top:18px}
+.intro h1{font-size:clamp(26px,6vw,34px);font-weight:800;letter-spacing:-.025em;line-height:1.08}
+.intro p{margin:0;color:var(--muted);max-width:60ch}
+.log{font:12px/1.6 var(--f-mono);color:var(--muted);background:var(--sunk);border-radius:8px;padding:10px 12px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.log .ok{color:var(--accent)} .log .er{color:var(--bad)} .log .wn{color:var(--warn)}
+.summary{display:flex;gap:8px;flex-wrap:wrap}
+.stat{flex:1 1 120px;background:var(--sunk);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font:800 22px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:600 11px/1 var(--f-mono);padding:5px 7px;border-radius:6px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.chip.dev{background:var(--bad-soft);color:var(--bad)}
+.chip.snipe{background:var(--warn-soft);color:var(--warn)}
+.chip.hit{background:var(--accent-soft);color:var(--accent)}
+.chip.hot{background:var(--hot-soft);color:var(--hot)}
+.filter{display:flex;gap:6px;flex-wrap:wrap}
+.filter button{padding:7px 11px;font-size:13px;border-radius:99px}
+.filter button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+.item{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;padding:12px 14px;border-top:1px solid var(--line);align-items:center}
+.item:first-child{border-top:0}
+.score{grid-row:span 2;width:46px;height:46px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font:800 18px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.score small{font:500 10px/1 var(--f-mono);margin-top:3px;opacity:.8}
+.score.low{background:var(--sunk);color:var(--muted)}
+.addr{font:600 14px/1.2 var(--f-mono);display:flex;gap:8px;align-items:center;min-width:0;flex-wrap:wrap}
+.addr .lbl{font-family:var(--f-body);font-weight:600}
+.meta{grid-column:2/4;display:flex;flex-direction:column;gap:6px;min-width:0}
+.sub{font:12px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.acts{display:flex;gap:4px}
+.icon{padding:6px 8px;font-size:13px}
+.star[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.empty{border:1px dashed var(--line);border-radius:var(--r);padding:18px;color:var(--muted);display:flex;flex-direction:column;gap:8px}
+.empty b{color:var(--fg)}
+.example{position:relative;opacity:.85}
+.tag{font:600 10px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;background:var(--warn-soft);color:var(--warn);padding:4px 6px;border-radius:4px;align-self:flex-start}
+.alert{background:var(--hot-soft);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px}
+.alert h3{font-size:16px;color:var(--hot)}
+.conv{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;font-size:14px}
+.err{background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:10px 12px;font-size:14px}
+.setup ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.toggle{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--fg);text-transform:none;letter-spacing:0;font-weight:500;margin:0}
+.toggle input{width:auto}
+details summary{cursor:pointer;font-weight:600}
+.n{font-variant-numeric:tabular-nums}
+.chip.early{background:var(--accent-soft);color:var(--accent)}
+.chip.smart{background:var(--hot);color:var(--surface)}
+.chip.win{background:var(--good-soft);color:var(--good)}
+.chip.loss{background:var(--bad-soft);color:var(--bad)}
+.chip.moved{background:var(--sunk);color:var(--fg)}
+.facts{display:flex;flex-direction:column;gap:3px;font-size:13px;font-variant-numeric:tabular-nums}
+.facts em{font:600 10px/1 var(--f-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-style:normal;margin-right:8px;display:inline-block;min-width:62px}
+.facts b{font-family:var(--f-mono)}
+.up{color:var(--good)} .down{color:var(--bad)}
+button.link{background:none;border:0;color:var(--accent);padding:2px 4px;text-decoration:underline}
+@media (max-width:480px){.meter{font-size:11px}.brand small{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<header class="bar"><div class="bar-in">
+  <div class="brand">First In <small>Solana</small></div>
+  <div class="spacer"></div>
+  <div class="meter" id="meter"><b id="cred">0</b> credits<br>this session</div>
+  <button class="ghost" id="openSettings" aria-label="Settings">⚙︎</button>
+</div></header>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>Find the wallets that keep getting in early.</h1>
+    <p>Paste tokens that ran. First In reads each one's launch history on-chain, pulls the first buyers with their entry and profit, and ranks the wallets that show up early across several of them. Watch the good ones and see what they buy next.</p>
+  </section>
+
+  <section class="panel setup" id="setup" hidden>
+    <h2>Connect a free RPC</h2>
+    <ol>
+      <li>Sign up at <a href="https://dashboard.helius.dev/signup" target="_blank" rel="noopener">dashboard.helius.dev</a>. The free plan is $0 and needs no card.</li>
+      <li>Copy your API key from the dashboard.</li>
+      <li>Paste it below. It stays in this browser only.</li>
+    </ol>
+    <div>
+      <label for="keyIn">Helius API key or full RPC URL</label>
+      <input id="keyIn" autocomplete="off" spellcheck="false" placeholder="e.g. 3f2a9c1e-…  or  https://…">
+      <p class="hint">Any Solana RPC URL that allows browser requests works too. The free Helius plan gives 1M credits a month; a scan uses roughly 300–2,000 including profit data.</p>
+    </div>
+    <div class="row">
+      <button class="primary" id="saveKey">Save and test</button>
+      <button id="closeSettings" hidden>Close</button>
+      <span class="sub" id="keyStatus"></span>
+    </div>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabScan" aria-selected="true">Find early wallets</button>
+    <button role="tab" id="tabWatch" aria-selected="false">Watchlist <span class="count" id="watchCount">0</span></button>
+  </div>
+
+  <!-- SCAN -->
+  <section id="scanView" class="wrap" style="padding:0;gap:18px">
+    <div class="panel">
+      <div>
+        <label for="mints">Token CAs that ran (one per line)</label>
+        <textarea id="mints" spellcheck="false" placeholder="Paste 3–10 mint addresses. More runners = better signal."></textarea>
+        <p class="hint">Works best on pump.fun launches. Other tokens are read from the mint's own history, which can be slow for very active coins.</p>
+      </div>
+      <div class="row">
+        <div style="flex:0 0 150px">
+          <label for="nBuyers">First buyers per token</label>
+          <input id="nBuyers" type="number" min="10" max="200" value="50" inputmode="numeric">
+        </div>
+        <div class="spacer"></div>
+        <button class="primary" id="scanBtn">Scan tokens</button>
+        <button id="stopBtn" hidden>Stop</button>
+      </div>
+      <div class="log" id="log" hidden></div>
+    </div>
+
+    <div id="results"></div>
+  </section>
+
+  <!-- WATCH -->
+  <section id="watchView" class="wrap" style="padding:0;gap:18px" hidden>
+    <div class="panel">
+      <div class="row">
+        <button class="primary" id="checkBtn">Check recent buys</button>
+        <label class="toggle"><input type="checkbox" id="auto"> Recheck every 3 min</label>
+        <div class="spacer"></div>
+        <span class="sub" id="lastCheck"></span>
+      </div>
+      <div class="log" id="wlog" hidden></div>
+    </div>
+    <div id="converge"></div>
+    <div id="feed"></div>
+    <div class="panel">
+      <h2>Watched wallets</h2>
+      <div class="row">
+        <input id="addAddr" placeholder="Add a wallet address" spellcheck="false" style="flex:1 1 220px">
+        <input id="addLabel" placeholder="Label (optional)" style="flex:1 1 140px;font-family:var(--f-body)">
+        <button id="addBtn">Add</button>
+      </div>
+      <div id="watchList"></div>
+      <details>
+        <summary>Back up or move your watchlist</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <p class="hint" style="margin:0">Your list is saved in this browser only. Copy it to keep a backup or move it to another device, then paste it here to restore.</p>
+          <textarea id="ioBox" spellcheck="false" placeholder="address,label — one per line"></textarea>
+          <div class="row"><button class="sm" id="exportBtn">Copy my list</button><button class="sm" id="importBtn">Add pasted wallets</button><span class="sub" id="ioStatus"></span></div>
+        </div>
+      </details>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const short = a => a ? a.slice(0,4) + '…' + a.slice(-4) : '';
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('firstin.'+k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v){ try { localStorage.setItem('firstin.'+k, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------- base58 + PDA (verified against pump.fun's global & event-authority PDAs) ---------- */
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function b58decode(s){ let n=0n; for(const c of s){ const i=B58.indexOf(c); if(i<0) throw new Error('bad'); n=n*58n+BigInt(i);} const out=[]; while(n>0n){ out.push(Number(n%256n)); n/=256n; } for(const c of s){ if(c==='1') out.push(0); else break; } return new Uint8Array(out.reverse()); }
+function b58encode(b){ let n=0n; for(const x of b) n=n*256n+BigInt(x); let s=''; while(n>0n){ s=B58[Number(n%58n)]+s; n/=58n; } for(const x of b){ if(x===0) s='1'+s; else break; } return s; }
+const P = 2n**255n - 19n; const mod = a => ((a%P)+P)%P;
+function pw(b,e){ let r=1n; b=mod(b); while(e>0n){ if(e&1n) r=r*b%P; b=b*b%P; e>>=1n; } return r; }
+const D = mod(-121665n * pw(121666n, P-2n));
+function onCurve(by){ let y=0n; for(let i=31;i>=0;i--) y=(y<<8n)|BigInt(by[i]); y=mod(y&((1n<<255n)-1n)); const y2=y*y%P; const u=mod(y2-1n), v=mod(D*y2+1n); if(v===0n) return false; const x2=u*pw(v,P-2n)%P; if(x2===0n) return true; return pw(x2,(P-1n)/2n)===1n; }
+async function findPda(seeds, program){
+  const pid = b58decode(program), tail = new TextEncoder().encode('ProgramDerivedAddress');
+  for(let bump=255; bump>=0; bump--){
+    const parts=[...seeds, new Uint8Array([bump]), pid, tail];
+    const buf=new Uint8Array(parts.reduce((a,p)=>a+p.length,0)); let o=0; for(const p of parts){ buf.set(p,o); o+=p.length; }
+    const h=new Uint8Array(await crypto.subtle.digest('SHA-256', buf));
+    if(!onCurve(h)) return b58encode(h);
+  }
+  throw new Error('no PDA');
+}
+function isAddr(s){ try { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s) && b58decode(s).length===32; } catch { return false; } }
+
+const PUMP = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+const WSOL = 'So11111111111111111111111111111111111111112';
+const SKIP_MINTS = new Set([WSOL,'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB']);
+
+/* ---------- RPC with pacing + retry ---------- */
+const BUILT_IN_RPC = 'https://mainnet.helius-rpc.com/?api-key=fd1765e7-b182-4807-b820-d35c9c1b99d0';
+let rpcUrl = store.get('rpc', '') || BUILT_IN_RPC;
+let credits = 0, lastCall = 0, gate = Promise.resolve(), stopFlag = false;
+const GAP = 115; // ~8.7 req/s, under the free plan's 10/s
+function slot(){ const p = gate.then(async () => { const w = lastCall + GAP - Date.now(); if(w>0) await sleep(w); lastCall = Date.now(); }); gate = p; return p; }
+function bump(c){ credits += c; $('cred').textContent = credits.toLocaleString(); }
+async function rpc(method, params, cost=1){
+  if(!rpcUrl) throw new Error('Add your RPC key first (gear icon, top right).');
+  for(let attempt=0; attempt<6; attempt++){
+    if(stopFlag) throw new Error('Stopped');
+    await slot();
+    let res;
+    try { res = await fetch(rpcUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({jsonrpc:'2.0', id:1, method, params})}); }
+    catch(e){ if(attempt<5){ await sleep(600*2**attempt); continue; } throw new Error('Could not reach the RPC. Check your connection and key.'); }
+    if(res.status===401 || res.status===403) throw new Error('The RPC rejected the key. Check it in settings.');
+    if(res.status===429 || res.status>=500){ await sleep(900*2**attempt); continue; }
+    let j; try { j = await res.json(); } catch { throw new Error('The RPC sent back something unreadable.'); }
+    bump(cost);
+    if(j.error){
+      if(j.error.code===-32429 || /rate|too many/i.test(j.error.message||'')){ await sleep(900*2**attempt); continue; }
+      throw new Error(j.error.message || 'RPC error');
+    }
+    return j.result;
+  }
+  throw new Error('The RPC kept rate-limiting. Wait a minute and try again.');
+}
+async function pool(items, conc, fn){
+  const out = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({length: Math.min(conc, items.length)}, async () => { while(i < items.length){ const k = i++; try { out[k] = await fn(items[k], k); } catch(e){ if(e.message==='Stopped') throw e; out[k] = null; } } }));
+  return out;
+}
+const getTx = sig => rpc('getTransaction', [sig, {encoding:'jsonParsed', maxSupportedTransactionVersion:0, commitment:'confirmed'}]);
+async function names(mints){
+  const m = {};
+  if(!mints.length) return m;
+  try {
+    for(let i=0;i<mints.length;i+=100){
+      const r = await rpc('getAssetBatch', {ids: mints.slice(i,i+100)}, 10);
+      for(const a of r||[]) if(a?.id) m[a.id] = {name: a.content?.metadata?.name || '', symbol: a.content?.metadata?.symbol || ''};
+    }
+  } catch {}
+  return m;
+}
+/* Current prices from DexScreener (free, no key). priceSol = token price in SOL. */
+async function dexPrices(mints){
+  const prices = {}; let solUsd = 0, solLiq = 0;
+  const all = [...new Set([...mints, WSOL])];
+  for(let i=0; i<all.length; i+=30){
+    try {
+      const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + all.slice(i,i+30).join(','));
+      if(!r.ok) continue;
+      const j = await r.json();
+      for(const p of j.pairs || []){
+        if(p.chainId !== 'solana') continue;
+        const base = p.baseToken?.address, liq = p.liquidity?.usd || 0;
+        if(base === WSOL){ if(/USD/i.test(p.quoteToken?.symbol||'') && liq > solLiq){ solUsd = Number(p.priceUsd) || solUsd; solLiq = liq; } continue; }
+        if(!mints.includes(base)) continue;
+        const cur = prices[base];
+        if(!cur || liq > cur.liq) prices[base] = {liq, priceUsd: Number(p.priceUsd)||0, priceSol: p.quoteToken?.address === WSOL ? Number(p.priceNative)||0 : 0};
+      }
+    } catch {}
+  }
+  if(!solUsd) for(const v of Object.values(prices)) if(v.priceSol && v.priceUsd){ solUsd = v.priceUsd / v.priceSol; break; }
+  for(const v of Object.values(prices)) if(!v.priceSol && solUsd && v.priceUsd) v.priceSol = v.priceUsd / solUsd;
+  return {prices, solUsd};
+}
+
+/* ---------- parsing ---------- */
+function keysOf(tx){ return tx.transaction.message.accountKeys.map(k => typeof k === 'string' ? {pubkey:k, signer:false} : k); }
+const ui = b => Number(b?.uiTokenAmount?.uiAmount || 0);
+function deltas(tx, filterOwner){
+  const d = new Map(); // key owner|mint
+  const add = (b, sign) => { if(filterOwner && b.owner !== filterOwner) return; const k = b.owner+'|'+b.mint; d.set(k, (d.get(k)||0) + sign*ui(b)); };
+  (tx.meta.preTokenBalances||[]).forEach(b => add(b,-1));
+  (tx.meta.postTokenBalances||[]).forEach(b => add(b, 1));
+  return d;
+}
+/* Buyers of `mint` in this tx: signers whose token account for the mint grew. Also returns that token account. */
+function buysIn(tx, mint){
+  if(!tx || !tx.meta || tx.meta.err) return [];
+  const keys = keysOf(tx), signers = new Set(keys.filter(k=>k.signer).map(k=>k.pubkey));
+  const pre = tx.meta.preTokenBalances || [];
+  const by = new Map();
+  for(const b of tx.meta.postTokenBalances || []){
+    if(b.mint !== mint || !signers.has(b.owner)) continue;
+    const d = ui(b) - ui(pre.find(x => x.accountIndex === b.accountIndex));
+    if(d <= 0) continue;
+    const e = by.get(b.owner) || {owner: b.owner, amount: 0, acct: keys[b.accountIndex]?.pubkey};
+    e.amount += d; by.set(b.owner, e);
+  }
+  for(const e of by.values()){ const i = keys.findIndex(x => x.pubkey === e.owner); e.sol = i>=0 ? (tx.meta.preBalances[i]-tx.meta.postBalances[i])/1e9 : 0; }
+  return [...by.values()];
+}
+function walletBuys(tx, wallet){
+  if(!tx || !tx.meta || tx.meta.err) return [];
+  const keys = keysOf(tx);
+  const i = keys.findIndex(x => x.pubkey === wallet);
+  if(i < 0 || !keys[i].signer) return [];
+  const sol = (tx.meta.preBalances[i]-tx.meta.postBalances[i])/1e9;
+  const out = [];
+  for(const [k, v] of deltas(tx, wallet)){ const m = k.split('|')[1]; if(v > 0 && !SKIP_MINTS.has(m)) out.push({mint:m, amount:v, sol}); }
+  return out;
+}
+
+/* ---------- scan one token ---------- */
+async function oldestSigs(address, maxPages, onPage){
+  let before, prev = [], cur = [], pages = 0, total = 0;
+  while(pages < maxPages){
+    const opts = {limit:1000}; if(before) opts.before = before;
+    const r = await rpc('getSignaturesForAddress', [address, opts]);
+    pages++; total += r.length; prev = cur; cur = r; onPage(total);
+    if(r.length < 1000) return {sigs: [...prev, ...cur].reverse(), total, complete: true};
+    before = r[r.length-1].signature;
+  }
+  return {sigs: [], total, complete: false};
+}
+async function scanToken(mint, N, log){
+  const bc = await findPda([new TextEncoder().encode('bonding-curve'), b58decode(mint)], PUMP);
+  const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
+  const viaPump = probe.length > 0;
+  const addr = viaPump ? bc : mint;
+  const src = viaPump ? 'pump.fun curve' : 'mint';
+  const line = log(`${short(mint)}: reading ${src} history…`);
+  const {sigs, total, complete} = await oldestSigs(addr, viaPump ? 600 : 250, n => line(`${short(mint)}: reading ${src} history… ${n.toLocaleString()} txs`));
+  if(!complete) return {mint, skipped:`too many transactions (${total.toLocaleString()}+) to reach launch on a free RPC`};
+  const okSigs = sigs.filter(s => !s.err);
+  if(!okSigs.length) return {mint, skipped:'no successful transactions found'};
+  let supply = 0;
+  try { supply = Number((await rpc('getTokenSupply', [mint])).value.uiAmount) || 0; } catch {}
+  const createSlot = okSigs[0].slot, createTime = okSigs[0].blockTime;
+  const buyers = []; const seen = new Set(); let dev = null;
+  const cap = Math.min(okSigs.length, N*5);
+  for(let i=0; i<cap && buyers.length < N; i+=6){
+    const batch = okSigs.slice(i, Math.min(i+6, cap));
+    const txs = await pool(batch, 6, s => getTx(s.signature));
+    txs.forEach((tx, j) => {
+      if(!tx) return;
+      if(i===0 && j===0) dev = keysOf(tx)[0]?.pubkey || null;
+      for(const b of buysIn(tx, mint)){
+        if(seen.has(b.owner) || b.owner === bc) continue;
+        seen.add(b.owner);
+        buyers.push({owner:b.owner, amount:b.amount, sol:b.sol, acct:b.acct, rank: buyers.length+1, slotDelta: batch[j].slot - createSlot, secs: (batch[j].blockTime||0) - (createTime||0), sig: batch[j].signature, t: batch[j].blockTime});
+      }
+    });
+    line(`${short(mint)}: ${total.toLocaleString()} txs total · ${buyers.length}/${N} first buyers found`);
+  }
+  return {mint, viaPump, dev, createSlot, createTime, supply, buyers: buyers.slice(0,N), totalTx: total};
+}
+
+/* ---------- profit per wallet per token ----------
+   Reads the history of the token account the wallet bought into.
+   SOL out on buys, SOL in on sells, plus what's still held at today's price.
+   Tokens sent away without SOL coming back are flagged as transferred out. */
+async function pnlFor(owner, acct, mint, priceSol){
+  const sigs = (await rpc('getSignaturesForAddress', [acct, {limit:60}])).filter(s => !s.err);
+  const txs = await pool(sigs, 6, s => getTx(s.signature));
+  let solIn = 0, solOut = 0, tokIn = 0, tokOut = 0, moved = 0, sells = 0;
+  for(const tx of txs){
+    if(!tx || !tx.meta || tx.meta.err) continue;
+    const keys = keysOf(tx);
+    const i = keys.findIndex(x => x.pubkey === owner);
+    const solD = i >= 0 ? (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / 1e9 : 0;
+    const tokD = deltas(tx, owner).get(owner+'|'+mint) || 0;
+    if(tokD > 0){ tokIn += tokD; if(solD < 0) solOut += -solD; }
+    else if(tokD < 0){ tokOut += -tokD; if(solD > 0.0005){ solIn += solD; sells++; } else moved += -tokD; }
+  }
+  let held = Math.max(0, tokIn - tokOut);
+  const partial = sigs.length >= 60;
+  if(partial){ try { held = ui({uiTokenAmount: (await rpc('getTokenAccountBalance', [acct])).value}); } catch { held = 0; } }
+  const unreal = held * (priceSol || 0);
+  return {solIn, solOut, held, unreal, total: solIn + unreal - solOut, moved: moved > 0, sells, partial, priced: !!priceSol};
+}
+
+/* ---------- aggregate ---------- */
+function aggregate(tokens, pnl){
+  const m = new Map();
+  const get = a => { let w = m.get(a); if(!w){ w = {a, hits:[], dev:[]}; m.set(a, w); } return w; };
+  for(const t of tokens){
+    for(const b of t.buyers){
+      const price = b.amount > 0 && b.sol > 0 ? b.sol / b.amount : 0;
+      get(b.owner).hits.push({mint:t.mint, sym:t.symbol, rank:b.rank, sd:b.slotDelta, secs:b.secs, sol:b.sol, acct:b.acct,
+        mcapSol: price && t.supply ? price * t.supply : 0, p: pnl?.[b.owner+'|'+t.mint] || null});
+    }
+    if(t.dev) get(t.dev).dev.push(t.symbol);
+  }
+  return [...m.values()].filter(w => w.hits.length).map(w => {
+    const n = w.hits.length;
+    const withMc = w.hits.filter(h => h.mcapSol > 0);
+    const withP = w.hits.filter(h => h.p);
+    return {...w, n,
+      avg: w.hits.reduce((s,h)=>s+h.rank,0)/n,
+      avgSecs: w.hits.reduce((s,h)=>s+Math.max(0,h.secs||0),0)/n,
+      avgMcapSol: withMc.length ? withMc.reduce((s,h)=>s+h.mcapSol,0)/withMc.length : 0,
+      snipes: w.hits.filter(h=>h.sd<=1).length,
+      pnlCount: withP.length,
+      pnl: withP.reduce((s,h)=>s+h.p.total,0),
+      invested: withP.reduce((s,h)=>s+h.p.solOut,0),
+      moved: withP.some(h=>h.p.moved)};
+  }).sort((a,b) => b.n - a.n || (b.pnlCount && a.pnlCount ? b.pnl - a.pnl : b.pnlCount - a.pnlCount) || a.avg - b.avg);
+}
+function labelsFor(w){
+  const L = [];
+  const sniper = w.snipes / w.n >= 0.5;
+  if(w.n >= 2 && w.pnlCount && w.pnl > 0 && !sniper && !w.dev.length) L.push(['smart','SMART']);
+  if(w.dev.length) L.push(['dev','DEV']);
+  if(sniper) L.push(['snipe','SNIPER']);
+  else if(w.avg <= 10) L.push(['early','VERY EARLY']);
+  else L.push(['early','EARLY']);
+  if(w.pnlCount){ if(w.pnl > 0) L.push(['win','IN PROFIT']); else if(w.pnl < 0) L.push(['loss','IN LOSS']); }
+  if(w.moved) L.push(['moved','MOVED TOKENS']);
+  return L;
+}
+
+/* ---------- formatting ---------- */
+let results = store.get('results', null);
+const solUsd = () => results?.solUsd || 0;
+const usd = v => { const a = Math.abs(v), s = v < 0 ? '-$' : '$'; if(a >= 1e6) return s+(a/1e6).toFixed(a>=1e7?0:1)+'M'; if(a >= 1e3) return s+(a/1e3).toFixed(a>=1e4?0:1)+'K'; return s+a.toFixed(0); };
+const sol = v => (Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(3)) + ' SOL';
+const signedSol = v => (v > 0 ? '+' : '') + sol(v);
+const mcap = solv => !solv ? '—' : solUsd() ? usd(solv * solUsd()) : sol(solv);
+const pnlTxt = v => signedSol(v) + (solUsd() ? ` (${v>0?'+':''}${usd(v*solUsd())})` : '');
+const dur = s => s < 1 ? '<1s' : s < 60 ? Math.round(s)+'s' : s < 3600 ? Math.round(s/60)+'m' : (s/3600).toFixed(1)+'h';
+const ago = t => { if(!t) return ''; const s = Date.now()/1000 - t; if(s < 90) return 'just now'; if(s < 3600) return Math.round(s/60)+'m ago'; if(s < 86400) return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago'; };
+
+/* ---------- state ---------- */
+let watch = store.get('watch', []);
+let feed = store.get('feed', []);
+let lastChecked = store.get('lastChecked', 0);
+let filter = 'multi';
+let busy = false;
+
+function logger(el){
+  el.hidden = false; el.innerHTML = '';
+  return (msg, cls) => { const d = document.createElement('div'); if(cls) d.className = cls; d.textContent = msg; el.appendChild(d); el.scrollTop = el.scrollHeight; return (m2, c2) => { d.textContent = m2; if(c2) d.className = c2; el.scrollTop = el.scrollHeight; }; };
+}
+function isWatched(a){ return watch.some(w => w.a === a); }
+function toggleWatch(a, label){
+  if(isWatched(a)) watch = watch.filter(w => w.a !== a); else watch.push({a, label: label || ''});
+  store.set('watch', watch); renderWatchList(); renderResults(); $('watchCount').textContent = watch.length;
+}
+async function copy(text, btn){
+  try { await navigator.clipboard.writeText(text); flash(btn, 'Copied'); }
+  catch { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); flash(btn,'Copied'); } catch { flash(btn,'Select and copy'); } t.remove(); }
+}
+function flash(btn, msg){ if(!btn) return; const o = btn.textContent; btn.textContent = msg; setTimeout(() => btn.textContent = o, 1200); }
+
+/* ---------- render: scan results ---------- */
+function exampleBlock(){
+  return `<div class="empty example">
+    <span class="tag">Example output</span>
+    <b>What a scan returns</b>
+    <div class="list">
+      <div class="item"><div class="score">3<small>of 4</small></div><div class="addr"><span>7xKq…9fPa</span><span class="chip smart">SMART</span><span class="chip early">VERY EARLY</span></div><div class="acts"><button class="icon" disabled>☆ Watch</button></div>
+        <div class="meta"><div class="facts"><span><em>Avg entry</em>$6.2K mcap · 41s in</span><span><em>PnL</em><b class="up">+8.40 SOL</b></span></div><div class="chips"><span class="chip win">TOKA #2 · $4K · +5.1 SOL</span><span class="chip win">TOKB #4 · $7K · +3.6 SOL</span><span class="chip loss">TOKC #12 · $8K · -0.3 SOL</span></div></div></div>
+    </div>
+    <span>Wallets early on several runners rise to the top. Launch-block buys are usually bots or the dev's own bundle.</span>
+  </div>`;
+}
+function renderResults(){
+  const el = $('results');
+  if(!results || !results.tokens?.length){ el.innerHTML = exampleBlock(); return; }
+  const toks = results.tokens.filter(t => !t.skipped);
+  const all = aggregate(toks, results.pnl);
+  const multi = all.filter(w => w.n >= 2);
+  if(toks.length < 2 && filter === 'multi') filter = 'all';
+  let rows = filter === 'multi' ? multi
+    : filter === 'profit' ? all.filter(w => w.pnlCount && w.pnl > 0).sort((a,b) => b.pnl - a.pnl)
+    : filter === 'clean' ? all.filter(w => (toks.length < 2 || w.n >= 2) && w.snipes / w.n < 0.5 && !w.dev.length)
+    : all;
+  const shown = rows.slice(0, 150);
+  const skipped = results.tokens.filter(t => t.skipped);
+  const profitable = all.filter(w => w.pnlCount && w.pnl > 0).length;
+  el.innerHTML = `
+  <div class="panel">
+    <div class="row"><h2>Early wallets</h2><div class="spacer"></div><span class="sub">${esc(new Date(results.at).toLocaleString())}</span></div>
+    <div class="summary">
+      <div class="stat"><b class="n">${toks.length}</b><span>tokens scanned</span></div>
+      <div class="stat"><b class="n">${multi.length}</b><span>early on 2+</span></div>
+      <div class="stat"><b class="n">${profitable}</b><span>in profit</span></div>
+    </div>
+    <div class="chips">${toks.map(t => `<a class="chip" href="https://dexscreener.com/solana/${esc(t.mint)}" target="_blank" rel="noopener">${esc(t.symbol)} · ${t.buyers.length} buyers</a>`).join('')}</div>
+    ${skipped.length ? `<div class="err">${skipped.map(t => `Skipped ${esc(short(t.mint))}: ${esc(t.skipped)}.`).join('<br>')}</div>` : ''}
+    <div class="filter" role="group" aria-label="Filter">
+      ${toks.length >= 2 ? `<button data-f="multi" aria-pressed="${filter==='multi'}">Early on 2+</button>` : ''}
+      <button data-f="profit" aria-pressed="${filter==='profit'}">In profit</button>
+      <button data-f="clean" aria-pressed="${filter==='clean'}">No bots or devs</button>
+      <button data-f="all" aria-pressed="${filter==='all'}">Everyone</button>
+    </div>
+    <p class="hint" style="margin:0">PnL is on the scanned tokens only: SOL out on buys, SOL back on sells, plus what's still held at today's price. Tap “Get PnL” on any wallet that hasn't loaded yet.</p>
+  </div>
+  ${shown.length ? `<div class="list">${shown.map(w => walletRow(w, toks.length)).join('')}</div>` :
+    `<div class="empty"><b>${filter==='profit' ? 'No wallets with loaded PnL are in profit yet.' : 'No wallets match this filter.'}</b><span>${filter==='profit' ? 'Tap “Get PnL” on wallets under Everyone, or try more runners.' : 'Try more runners from the same period or narrative, or switch to Everyone.'}</span></div>`}
+  ${rows.length > shown.length ? `<p class="hint">Showing the top 150 of ${rows.length}.</p>` : ''}`;
+  el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filter = b.dataset.f; renderResults(); });
+  bindRowActions(el);
+}
+function walletRow(w, total){
+  const watched = isWatched(w.a);
+  const label = watch.find(x => x.a === w.a)?.label;
+  const tags = labelsFor(w).map(([c,t]) => `<span class="chip ${c}">${t}</span>`).join('');
+  const chips = [];
+  if(w.dev.length) chips.push(`<span class="chip dev">dev of ${esc(w.dev.join(', '))}</span>`);
+  w.hits.slice().sort((a,b)=>a.rank-b.rank).forEach(h => {
+    const cls = !h.p ? 'hit' : h.p.total > 0 ? 'win' : h.p.total < 0 ? 'loss' : 'hit';
+    const parts = [`${esc(h.sym)} #${h.rank}`, mcap(h.mcapSol)];
+    if(h.p) parts.push(signedSol(h.p.total) + (h.p.held > 0 ? ' · holding' : ''));
+    chips.push(`<span class="chip ${cls}">${parts.join(' · ')}</span>`);
+  });
+  const missing = w.hits.some(h => !h.p);
+  const pnlLine = w.pnlCount
+    ? `<b class="${w.pnl>0?'up':w.pnl<0?'down':''}">${esc(pnlTxt(w.pnl))}</b>${w.invested>0 ? ` <span class="sub">${w.pnl>=0?'+':''}${Math.round(w.pnl/w.invested*100)}% on ${esc(sol(w.invested))} in</span>` : ''}${missing ? ` <button class="sm link" data-pnl="${esc(w.a)}">Load rest</button>` : ''}`
+    : `<button class="sm" data-pnl="${esc(w.a)}">Get PnL</button>`;
+  return `<div class="item">
+    <div class="score ${w.n<2?'low':''}">${w.n}<small>of ${total}</small></div>
+    <div class="addr">${label ? `<span class="lbl">${esc(label)}</span>` : ''}<span>${esc(short(w.a))}</span>${tags}</div>
+    <div class="acts">
+      <button class="icon star" data-watch="${esc(w.a)}" aria-pressed="${watched}">${watched ? '★ Watching' : '☆ Watch'}</button>
+    </div>
+    <div class="meta">
+      <div class="facts">
+        <span><em>Avg entry</em>${esc(mcap(w.avgMcapSol))} mcap · ${esc(dur(w.avgSecs))} after launch · #${w.avg.toFixed(w.avg%1?1:0)}</span>
+        <span><em>PnL</em>${pnlLine}</span>
+      </div>
+      <div class="chips">${chips.join('')}</div>
+      <div class="sub"><a href="https://solscan.io/account/${esc(w.a)}" target="_blank" rel="noopener">Solscan</a> · <a href="https://gmgn.ai/sol/address/${esc(w.a)}" target="_blank" rel="noopener">GMGN</a> · <a href="#" data-copy="${esc(w.a)}">Copy</a></div>
+    </div>
+  </div>`;
+}
+function bindRowActions(el){
+  el.querySelectorAll('[data-watch]').forEach(b => b.onclick = () => toggleWatch(b.dataset.watch));
+  el.querySelectorAll('[data-copy]').forEach(b => b.onclick = e => { e.preventDefault(); copy(b.dataset.copy, b); });
+  el.querySelectorAll('[data-pnl]').forEach(b => b.onclick = () => loadPnl([b.dataset.pnl], b));
+}
+
+/* ---------- PnL loading ---------- */
+async function refreshPrices(log){
+  const toks = results.tokens.filter(t => !t.skipped);
+  const {prices, solUsd: su} = await dexPrices(toks.map(t => t.mint));
+  if(su) results.solUsd = su;
+  for(const t of toks) if(prices[t.mint]) t.priceSol = prices[t.mint].priceSol;
+  const missing = toks.filter(t => !t.priceSol).length;
+  if(log && missing) log(`No current price for ${missing} token${missing>1?'s':''}; their held bags count as 0.`, 'wn');
+}
+async function loadPnl(wallets, btn, log){
+  if(busy && !log) return;
+  const own = !log; if(own){ busy = true; stopFlag = false; if(btn){ btn.disabled = true; btn.textContent = 'Loading…'; } }
+  results.pnl = results.pnl || {};
+  try {
+    if(results.pricedAt === undefined || Date.now() - results.pricedAt > 5*60*1000){ await refreshPrices(log); results.pricedAt = Date.now(); }
+    const byMint = Object.fromEntries(results.tokens.filter(t=>!t.skipped).map(t => [t.mint, t]));
+    const jobs = [];
+    for(const a of wallets) for(const t of Object.values(byMint)){
+      const b = t.buyers.find(x => x.owner === a);
+      if(b && !results.pnl[a+'|'+t.mint]) jobs.push({a, t, b});
+    }
+    let done = 0; const line = log ? log(`Profit: 0/${jobs.length} positions`) : null;
+    for(const j of jobs){
+      if(!j.b.acct){ continue; }
+      try { results.pnl[j.a+'|'+j.t.mint] = await pnlFor(j.a, j.b.acct, j.t.mint, j.t.priceSol); }
+      catch(e){ if(e.message === 'Stopped') throw e; }
+      done++; if(line) line(`Profit: ${done}/${jobs.length} positions`);
+    }
+    if(jobs.some(j => !j.b.acct) && log) log('Some older results lack token-account data. Rescan to load their PnL.', 'wn');
+  } catch(e){ if(log) log(e.message === 'Stopped' ? 'Stopped. Showing what was finished.' : e.message, e.message==='Stopped'?'wn':'er'); else if(btn) btn.textContent = e.message === 'Stopped' ? 'Stopped' : 'Failed, tap to retry'; }
+  finally {
+    store.set('results', results);
+    if(own){ busy = false; }
+    renderResults();
+  }
+}
+
+/* ---------- scan flow ---------- */
+$('scanBtn').onclick = async () => {
+  if(busy) return;
+  if(!rpcUrl){ showSettings(true); return; }
+  const raw = $('mints').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+  const mints = [...new Set(raw)];
+  const bad = mints.filter(m => !isAddr(m));
+  const log = logger($('log'));
+  if(!mints.length){ log('Paste at least one token address.', 'er'); return; }
+  if(bad.length){ log(`These don't look like Solana addresses: ${bad.map(short).join(', ')}`, 'er'); return; }
+  const N = Math.max(10, Math.min(200, parseInt($('nBuyers').value) || 50));
+  busy = true; stopFlag = false; $('scanBtn').disabled = true; $('stopBtn').hidden = false;
+  const start = credits;
+  const tokens = [];
+  try {
+    const meta = await names(mints);
+    for(const m of mints){
+      try {
+        const t = await scanToken(m, N, log);
+        t.symbol = meta[m]?.symbol || short(m); t.name = meta[m]?.name || '';
+        tokens.push(t);
+        log(t.skipped ? `${t.symbol}: skipped, ${t.skipped}` : `${t.symbol}: ${t.buyers.length} first buyers from ${t.viaPump ? 'pump.fun curve' : 'mint history'}`, t.skipped ? 'wn' : 'ok');
+      } catch(e){
+        if(e.message === 'Stopped') throw e;
+        tokens.push({mint:m, symbol: meta[m]?.symbol || short(m), skipped: e.message});
+        log(`${short(m)}: ${e.message}`, 'er');
+      }
+    }
+    if(tokens.some(t => !t.skipped)){
+      results = {at: Date.now(), tokens, pnl: {}};
+      filter = 'multi';
+      renderResults();
+      // Auto-load PnL for the wallets that matter most: early on 2+ (or top 20 when one token).
+      const ok = tokens.filter(t => !t.skipped);
+      const agg = aggregate(ok, {});
+      const focus = (ok.length >= 2 ? agg.filter(w => w.n >= 2) : agg.slice().sort((a,b)=>a.avg-b.avg).slice(0,20)).slice(0, 40).map(w => w.a);
+      if(focus.length){ log(`Loading profit for ${focus.length} wallet${focus.length>1?'s':''}…`); await loadPnl(focus, null, log); }
+    }
+    log(`Done. Used about ${(credits-start).toLocaleString()} credits.`, 'ok');
+  } catch(e){
+    log(e.message === 'Stopped' ? 'Stopped. Showing what was finished.' : e.message, e.message === 'Stopped' ? 'wn' : 'er');
+    if(tokens.some(t => !t.skipped) && results?.tokens !== tokens){ results = {at: Date.now(), tokens, pnl: {}}; }
+  } finally {
+    busy = false; $('scanBtn').disabled = false; $('stopBtn').hidden = true;
+    if(results){ store.set('results', results); renderResults(); }
+  }
+};
+$('stopBtn').onclick = () => { stopFlag = true; };
+
+/* ---------- watchlist ---------- */
+function renderWatchList(){
+  $('watchCount').textContent = watch.length;
+  const el = $('watchList');
+  if(!watch.length){ el.innerHTML = `<div class="empty"><b>No wallets yet.</b><span>Tap ☆ Watch on a scan result, or add an address above.</span></div>`; return; }
+  el.innerHTML = `<div class="list">${watch.map((w,i) => `<div class="item" style="grid-template-columns:1fr auto">
+      <div class="addr" style="grid-column:1"><span>${esc(short(w.a))}</span><span class="sub">${esc(w.label || '')}</span></div>
+      <div class="acts"><button class="icon" data-rename="${i}">Label</button><button class="icon" data-rm="${i}">Remove</button></div>
+      <div class="meta" style="grid-column:1/3" data-edit="${i}" hidden><div class="row"><input id="lbl${i}" value="${esc(w.label||'')}" style="flex:1;font-family:var(--f-body)" placeholder="Label"><button class="sm" data-savelbl="${i}">Save</button></div></div>
+    </div>`).join('')}</div>`;
+  el.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { watch.splice(+b.dataset.rm, 1); store.set('watch', watch); renderWatchList(); renderResults(); });
+  el.querySelectorAll('[data-rename]').forEach(b => b.onclick = () => { const e = el.querySelector(`[data-edit="${b.dataset.rename}"]`); e.hidden = !e.hidden; });
+  el.querySelectorAll('[data-savelbl]').forEach(b => b.onclick = () => { const i = +b.dataset.savelbl; watch[i].label = $('lbl'+i).value.trim(); store.set('watch', watch); renderWatchList(); renderFeed(); });
+}
+$('addBtn').onclick = () => {
+  const a = $('addAddr').value.trim();
+  if(!isAddr(a)){ $('addAddr').setCustomValidity('Not a Solana address'); $('addAddr').reportValidity(); return; }
+  $('addAddr').setCustomValidity('');
+  if(!isWatched(a)) watch.push({a, label: $('addLabel').value.trim()});
+  $('addAddr').value = ''; $('addLabel').value = '';
+  store.set('watch', watch); renderWatchList(); renderResults();
+};
+$('exportBtn').onclick = e => { const txt = watch.map(w => w.a + (w.label ? ',' + w.label : '')).join('\n'); $('ioBox').value = txt; copy(txt, e.currentTarget); };
+$('importBtn').onclick = () => {
+  let added = 0;
+  for(const line of $('ioBox').value.split('\n')){
+    const [a, ...rest] = line.split(','); const addr = (a||'').trim();
+    if(isAddr(addr) && !isWatched(addr)){ watch.push({a: addr, label: rest.join(',').trim()}); added++; }
+  }
+  store.set('watch', watch); renderWatchList(); renderResults();
+  $('ioStatus').textContent = added ? `Added ${added} wallet${added>1?'s':''}.` : 'No new wallet addresses found.';
+};
+
+function renderFeed(){
+  const lbl = a => watch.find(w => w.a === a)?.label || short(a);
+  $('lastCheck').textContent = lastChecked ? 'Checked ' + ago(lastChecked/1000) : '';
+  const dayAgo = Date.now()/1000 - 86400;
+  const byMint = new Map();
+  for(const f of feed){ if(!f.t || f.t < dayAgo) continue; const s = byMint.get(f.mint) || {mint:f.mint, sym:f.sym, wallets:new Set(), first:f.t}; s.wallets.add(f.w); s.first = Math.min(s.first, f.t); byMint.set(f.mint, s); }
+  const conv = [...byMint.values()].filter(s => s.wallets.size >= 2).sort((a,b) => b.wallets.size - a.wallets.size);
+  $('converge').innerHTML = conv.length ? `<div class="alert"><h3>Several watched wallets bought the same token</h3>${conv.map(s => `<div class="conv"><span><b>${esc(s.sym)}</b> · ${s.wallets.size} wallets · first ${esc(ago(s.first))}</span><span class="row"><a class="btn sm" href="https://dexscreener.com/solana/${esc(s.mint)}" target="_blank" rel="noopener">Chart</a><button class="sm" data-copy="${esc(s.mint)}">Copy CA</button></span></div>`).join('')}</div>` : '';
+  bindRowActions($('converge'));
+  const el = $('feed');
+  if(!watch.length){ el.innerHTML = ''; return; }
+  if(!feed.length){ el.innerHTML = lastChecked ? `<div class="empty"><b>No recent token buys.</b><span>None of your watched wallets bought a token in their last 15 transactions.</span></div>` : `<div class="empty"><b>Ready to check.</b><span>Tap “Check recent buys” to see what your ${watch.length} watched wallet${watch.length>1?'s are':' is'} buying.</span></div>`; return; }
+  el.innerHTML = `<div class="list">${feed.slice(0,80).map(f => `<div class="item" style="grid-template-columns:1fr auto">
+    <div class="addr"><span class="lbl">${esc(lbl(f.w))}</span><span class="sub">bought</span><span>${esc(f.sym)}</span>${byMint.get(f.mint)?.wallets.size >= 2 ? '<span class="chip hot">shared</span>' : ''}</div>
+    <div class="sub">${esc(ago(f.t))}</div>
+    <div class="meta" style="grid-column:1/3"><div class="sub">${f.sol>0 ? esc(sol(f.sol)) + ' · ' : ''}<a href="https://dexscreener.com/solana/${esc(f.mint)}" target="_blank" rel="noopener">Chart</a> · <a href="https://solscan.io/tx/${esc(f.sig)}" target="_blank" rel="noopener">Tx</a> · <a href="#" data-copy="${esc(f.mint)}">Copy CA</a></div></div>
+  </div>`).join('')}</div>`;
+  bindRowActions(el);
+}
+async function checkWatch(){
+  if(busy || !watch.length) return;
+  if(!rpcUrl){ showSettings(true); return; }
+  busy = true; stopFlag = false; $('checkBtn').disabled = true;
+  const log = logger($('wlog'));
+  const start = credits; const items = [];
+  try {
+    for(const w of watch){
+      const line = log(`${w.label || short(w.a)}: reading recent transactions…`);
+      try {
+        const sigs = (await rpc('getSignaturesForAddress', [w.a, {limit:15}])).filter(s => !s.err);
+        const txs = await pool(sigs, 6, s => getTx(s.signature));
+        let n = 0;
+        txs.forEach((tx, i) => { for(const b of walletBuys(tx, w.a)){ items.push({w: w.a, mint: b.mint, amount: b.amount, sol: b.sol, sig: sigs[i].signature, t: sigs[i].blockTime}); n++; } });
+        line(`${w.label || short(w.a)}: ${n} token buy${n===1?'':'s'}`, 'ok');
+      } catch(e){ if(e.message === 'Stopped') throw e; line(`${w.label || short(w.a)}: ${e.message}`, 'er'); }
+    }
+    const meta = await names([...new Set(items.map(i => i.mint))]);
+    items.forEach(i => i.sym = meta[i.mint]?.symbol || short(i.mint));
+    feed = items.sort((a,b) => (b.t||0) - (a.t||0));
+    lastChecked = Date.now();
+    store.set('feed', feed); store.set('lastChecked', lastChecked);
+    log(`Done. Used about ${(credits-start).toLocaleString()} credits.`, 'ok');
+  } catch(e){ log(e.message, 'er'); }
+  finally { busy = false; $('checkBtn').disabled = false; renderFeed(); }
+}
+$('checkBtn').onclick = checkWatch;
+let autoTimer = null;
+$('auto').onchange = () => {
+  clearInterval(autoTimer); store.set('auto', $('auto').checked);
+  if($('auto').checked) autoTimer = setInterval(() => { if(document.visibilityState === 'visible') checkWatch(); }, 180000);
+};
+
+/* ---------- settings + tabs ---------- */
+function showSettings(open){ $('setup').hidden = !open; $('closeSettings').hidden = !rpcUrl; if(open){ $('keyIn').value = rpcUrl ? rpcUrl.replace(/api-key=[^&]+/, 'api-key=••••') : ''; } }
+$('openSettings').onclick = () => showSettings($('setup').hidden);
+$('closeSettings').onclick = () => showSettings(false);
+$('saveKey').onclick = async () => {
+  let v = $('keyIn').value.trim();
+  if(!v || v.includes('••••')){ $('keyStatus').textContent = 'Paste your key first.'; return; }
+  const url = /^https?:\/\//.test(v) ? v : `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(v)}`;
+  const prev = rpcUrl; rpcUrl = url; $('keyStatus').textContent = 'Testing…';
+  try { const s = await rpc('getSlot', []); store.set('rpc', url); $('keyStatus').textContent = `Connected · slot ${Number(s).toLocaleString()}`; setTimeout(() => showSettings(false), 900); }
+  catch(e){ rpcUrl = prev; $('keyStatus').textContent = e.message; }
+};
+function tab(which){
+  const scan = which === 'scan';
+  $('tabScan').setAttribute('aria-selected', scan); $('tabWatch').setAttribute('aria-selected', !scan);
+  $('scanView').hidden = !scan; $('watchView').hidden = scan;
+  store.set('tab', which);
+}
+$('tabScan').onclick = () => tab('scan');
+$('tabWatch').onclick = () => tab('watch');
+
+/* ---------- boot ---------- */
+showSettings(!rpcUrl);
+tab(location.hash === '#watch' ? 'watch' : store.get('tab', 'scan'));
+if(store.get('auto', false)){ $('auto').checked = true; $('auto').onchange(); }
+renderResults(); renderWatchList(); renderFeed();
+})();
+
+</script>
+
+</body>
+</html>
