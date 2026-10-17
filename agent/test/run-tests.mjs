@@ -149,6 +149,10 @@ async function fakeFetch(url, opts = {}){
       const ids = [...body.messages[0].content.matchAll(/"id":"(c[0-9a-z]+)"/g)].map(m => m[1]);
       return json({content: [{type: 'tool_use', name: tool, input: {verdicts: ids.map(id => ({id, verdict: 'cabal', confidence: 88, why: 'Same-block buys and synced exits on every coin.', alert: 'Same 3 wallets aped the launch block and dumped together'}))}}], usage: {}});
     }
+    if(tool === 'thesis'){
+      const coin = JSON.parse(body.messages[0].content);
+      return json({content: [{type: 'tool_use', name: tool, input: {headline: `$${coin.coin}: Claude's take`, why: coin.draft.why.length ? coin.draft.why : ['passed every kill'], risks: coin.draft.risks, wrong: coin.draft.wrong}}], usage: {}});
+    }
     return json({content: [{type: 'tool_use', name: tool, input: {headline: 'Cabal ran ALPHA, BETA and GAMMA', body: 'Test recap body.'}}], usage: {}});
   }
   if(url.startsWith('https://api.geckoterminal.com/')){
@@ -189,7 +193,14 @@ trade({owner: W1, mint: rand(), slot: 1, t: nowS() - 9000, solAmt: 1, tokAmt: 1e
 let s = await go('watch');
 assert.equal(s.watch.length, 2);
 assert.ok(s.watch.every(w => 'lastSig' in w));
-assert.equal(s.alerts.filter(a => a.kind !== 'octo').length, 0, 'no wallet alerts on the first bookmark run');
+assert.equal(s.alerts.filter(a => ['buy', 'overlap'].includes(a.kind)).length, 0, 'no wallet alerts on the first bookmark run');
+// the sweep ran on the same wake-up: every runner got a quick pass and the best clean ones are picks with a thesis
+assert.ok(s.desk.radar.swept >= 4, 'sweep covers all runners: ' + JSON.stringify(s.desk.radar));
+const pk = s.desk.picks[0];
+assert.ok(pk && pk.thesis.why.length && pk.thesis.wrong.length && pk.thesis.headline.startsWith('$'), JSON.stringify(s.desk.picks));
+assert.ok(s.alerts.some(a => a.kind === 'pick'));
+assert.match(sent.join('\n'), /CHIEF'S PICK/);
+assert.match(sent.join('\n'), /never takes a position/);
 assert.equal(s.alerts.filter(a => a.kind === 'octo').length, 1, 'Octo pings its strong grab once');
 
 // 2. both whales buy BETA -> two buy pings + overlap
@@ -201,7 +212,7 @@ assert.equal(s.alerts.filter(a => a.kind === 'buy').length, 2);
 assert.equal(s.alerts.filter(a => a.kind === 'overlap').length, 1);
 assert.match(sent.join('\n'), /Overlap: 2 watched wallets in \$BETA/);
 // a third run with nothing new doesn't repeat alerts
-const before = s.alerts.length; s = await go('watch'); assert.equal(s.alerts.length, before);
+const before = s.alerts.length; s = await go('watch'); assert.equal(s.alerts.length, before, 'picks are not re-pinged within 6h: ' + JSON.stringify(s.alerts.slice(0, 3).map(a => a.title)));
 
 // 3. scan + cabal hunt with Claude judging
 sent.length = 0;
@@ -221,8 +232,8 @@ assert.match(sent.join('\n'), /CABAL/);
 // the desk: free_kill -> social_kill -> chain -> verdict
 const rows = s.desk.pipeline.rows;
 assert.equal(rows.find(r => r.symbol === 'TINY').free, 'thin_liquidity');
-assert.equal(rows.find(r => r.symbol === 'DELTA').social, 'recycled_account');
-assert.ok(rows.filter(r => r.chain).length === 4, JSON.stringify(rows));
+assert.ok(s.desk.killed[delta.mint], 'DELTA killed on its recycled X handle');
+assert.ok(!s.desk.radar.coins.some(r => r.symbol === 'DELTA'), 'a social kill keeps it off the radar');
 // Octo found the curve-only coin, scored it, pinged it, and the desk scanned it
 const octaRow = rows.find(r => r.symbol === 'OCTA');
 assert.equal(octaRow?.src, 'octo'); assert.ok(octaRow.chain);
@@ -235,7 +246,11 @@ assert.ok(va.vet.facts.devPct > 0 && va.vet.facts.devPct < 0.05, 'dev bag read: 
 assert.equal(va.social.handle, 'alphacoin');
 assert.match(va.social.line, /4\.2K followers/);
 assert.ok(s.desk.verdicts.length === 4 && s.desk.verdicts.filter(v => v.verdict === 'CABAL RUN').length === 3, 'cabal found this run must flag its coins: ' + JSON.stringify(s.desk.verdicts));
-assert.ok(rows.filter(r => r.chain === 'CABAL RUN').length === 3);
+assert.ok(s.desk.radar.coins.filter(r => r.verdict === 'CABAL RUN' && r.deep).length === 3, 'deep scan updates the radar: ' + JSON.stringify(s.desk.radar.coins.map(r => [r.symbol, r.verdict])));
+// picks the deep scan proved wrong are withdrawn, and say so
+const withdrawn = s.desk.picks.filter(p => p.status === 'withdrawn');
+assert.ok(withdrawn.every(p => p.withdrawnFor === 'CABAL RUN') && withdrawn.length >= 1, JSON.stringify(s.desk.picks.map(p => [p.symbol, p.status])));
+assert.match(sent.join('\n'), /Chief withdraws/);
 assert.ok(['chief', 'scan', 'vet', 'social', 'hunt', 'watch'].every(a => s.desk.agents[a]), 'agent cards');
 assert.ok(s.desk.events.some(e => e.agent === 'social') && s.desk.events.some(e => e.agent === 'vet'));
 assert.match(sent.join('\n'), /🧑‍⚖️/);

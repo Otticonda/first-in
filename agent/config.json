@@ -37,7 +37,6 @@
       "cabal_in_early": 0.5,
       "early_bags_loaded": 0.9
     },
-    "socialChecksPerRun": 6,
     "octo": {
       "enabled": true,
       "pages": 3,
@@ -49,6 +48,13 @@
       "min_score": 0.5,
       "alert_score": 0.72,
       "alerts_per_run": 2
+    },
+    "sweep": {
+      "enabled": true,
+      "maxCoins": 15,
+      "creditBudget": 80,
+      "pick_score": 0.6,
+      "maxPicks": 2
     }
   },
   "cabal": {

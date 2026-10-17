@@ -4,8 +4,8 @@ A worker that runs First In on its own, 24/7, on GitHub Actions (free for public
 
 | Job | When | What it does |
 |---|---|---|
-| watch | every 15 min | Octo reads pump.fun's live coins and pings strong curve coins. Checks watched wallets for new buys, pings Telegram, flags when 2+ watched wallets buy the same coin. Reads your Telegram commands. |
-| scan | every 3 hours | Takes Octo's grabs and DexScreener runners through the desk: free kill → social kill (X account) → chain (first 30 buyers, dev bag, top 10, snipers, bundles, cabals) → Chief's verdict on Telegram. Then hunts for wallet groups that keep showing up early together. Strong groups get auto-watched. |
+| watch | every 15 min | Octo reads pump.fun's live coins. The **sweep** gives every live runner (Octo's grabs + DexScreener) a quick pass: free kill → X account → top-10 holders → verdict → score, and ranks them on the radar. The best clean ones become **Chief's picks** with a written thesis on Telegram. Also checks watched wallets and reads your Telegram commands. |
+| scan | every 3 hours | **Deep scan** of the radar's best coins: first 30 buyers, dev bag, snipers, bundles, cabal wallets. Sharpens each pick's thesis, or withdraws the pick if the deep scan finds a problem. Then hunts for wallet groups that keep showing up early together. |
 | recap | daily, 08:43 Lagos | Claude writes a recap of the last 24h and sends it. |
 
 Its memory is one JSON file on the `agent-data` branch. The site's **Agent** tab reads it.
@@ -32,7 +32,7 @@ Its memory is one JSON file on the `agent-data` branch. The site's **Agent** tab
 | Vet | Reads the chain: dev bag, top 10 wallets, snipers, bundled launch, cabal wallets among early buyers. |
 | Hunt | Finds wallets that keep buying early together and has Claude judge them. |
 | Watch | Tracks your wallets and pings their buys. |
-| Chief | Gives every scanned coin a verdict: CLEAN, RUG RISK, BUNDLED, BOTTED, CABAL RUN, SKETCHY SOCIALS, HEAVY BAGS or NO DATA. Never takes a position. |
+| Chief | Picks the best clean runners and writes a thesis for each (why it's on the desk, what could kill it, what would prove it wrong). Withdraws a pick out loud when it turns. Gives every scanned coin a verdict: CLEAN, RUG RISK, BUNDLED, BOTTED, CABAL RUN, SKETCHY SOCIALS, HEAVY BAGS or NO DATA. Never takes a position. |
 
 Every threshold is in `agent/config.json` under `desk` and shows on the site's Agent tab.
 

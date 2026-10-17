@@ -81,7 +81,7 @@ export async function judgeClusters(clusters, {apiKey, model, fetchImpl} = {}){
 
 const RECAP_SYSTEM = `You write the daily recap for First In, a Solana early-wallet tracker, sent to its owner on Telegram and shown on the site.
 Plain text only, no markdown, no hashtags. 120 to 220 words. Lead with the single most important thing that happened.
-Then cover: what watched wallets bought (and any overlaps), the Chief's verdicts on coins scanned (CLEAN, RUG RISK, CABAL RUN, etc.) and who won early, any cabal or smart-money groups found, and one concrete thing worth watching next.
+Then cover: what watched wallets bought (and any overlaps), the Chief's picks (and any it withdrew), the verdicts on coins scanned (CLEAN, RUG RISK, CABAL RUN, etc.) and who won early, any cabal or smart-money groups found, and one concrete thing worth watching next.
 Use $TICKER style. Be direct and specific with numbers from the data; never invent coins, wallets or figures. If it was a quiet day, say so briefly.`;
 
 const RECAP_TOOL = {
@@ -95,6 +95,7 @@ export function ruleRecap(ctx){
   lines.push(`${ctx.buys.length} buys from watched wallets in the last 24h${ctx.overlaps.length ? `, ${ctx.overlaps.length} overlap${ctx.overlaps.length > 1 ? 's' : ''}` : ''}.`);
   if(ctx.overlaps.length) lines.push('Overlaps: ' + ctx.overlaps.map(o => `$${o.symbol} (${o.wallets} wallets)`).join(', ') + '.');
   if(ctx.coins.length) lines.push('Scanned: ' + ctx.coins.map(c => `$${c.symbol}${c.inProfit != null ? ` ${c.inProfit}/${c.read} early in profit` : ''}`).join(', ') + '.');
+  if(ctx.chiefPicks?.length) lines.push('Picks: ' + ctx.chiefPicks.map(p => `$${p.symbol}${p.status === 'withdrawn' ? ` (withdrawn, ${p.withdrawnFor})` : ''}`).join(', ') + '.');
   if(ctx.verdicts?.length) lines.push('Chief: ' + ctx.verdicts.map(v => `$${v.symbol} ${v.verdict}`).join(', ') + '.');
   if(ctx.clusters.length) lines.push('Groups: ' + ctx.clusters.map(c => `${c.verdict} (${c.size} wallets, ${c.coins} coins)`).join(', ') + '.');
   lines.push(`Credits used: ${ctx.creditsToday.toLocaleString()}.`);

@@ -186,6 +186,25 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
 @media (min-width:620px){.kpis.k4{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .wsec{padding:10px 16px;font-size:10px;letter-spacing:.15em;color:var(--dim);text-transform:uppercase;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .wsec .spacer{flex:1}
+/* picks + radar */
+.pick{display:flex;flex-direction:column;gap:9px;padding:14px;border-top:1px solid var(--line)}
+.pick:first-child{border-top:0}
+.pick .t1{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pick .t1 b{font:700 18px/1 var(--f-display);letter-spacing:.04em}
+.pick h4{margin:0;font:600 13px/1.35 var(--f-mono);color:var(--fg)}
+.pick .sec{font-size:10px;letter-spacing:.06em;color:var(--dim);margin-bottom:3px}
+.pick ul{margin:0;padding-left:16px;font-size:11.5px;line-height:1.5;color:var(--muted)}
+.pick ul.lr li::marker{color:var(--dn)} .pick ul.lg li::marker{color:var(--up)} .pick ul.lw li::marker{color:var(--amb)}
+.pick.out{opacity:.62}
+.pick .note{font-size:10px;color:var(--dim)}
+.rrow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.9fr) minmax(0,1fr) minmax(0,.8fr);gap:8px;align-items:center;padding:9px 14px;border-top:1px solid var(--line);font-size:11px}
+.rrow.h{color:var(--dim);font-size:9.5px;letter-spacing:.06em;border-top:0;padding-bottom:4px}
+.rrow b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sbar{display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+.sbar i{flex:1;height:4px;background:var(--line2);position:relative;min-width:24px}
+.sbar i::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--w);background:var(--cy)}
+.rrow .mc{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.star2{color:var(--up);margin-left:4px}
 /* desk */
 .octo{position:absolute;left:11%;top:28%;width:clamp(44px,8vw,64px);transform:translate(-50%,-50%);z-index:3}
 .octo svg{width:100%;display:block;overflow:visible}
@@ -393,6 +412,8 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
     </div>
     <div class="floor" id="floor" aria-label="The desk floor, replaying what each agent did last"></div>
     <div class="crew" id="crew"></div>
+    <div id="picks"></div>
+    <div id="radar"></div>
     <div id="pipeline"></div>
     <div id="verdicts"></div>
     <div id="agentRecap"></div>
@@ -1331,9 +1352,13 @@ function renderDesk(){
   const verd = d.verdicts || [], v0 = verd[0];
   const groups = (agent.analysis?.clusters || []).filter(c => ['cabal', 'smart_money'].includes(c.verdict)).length;
   const clean = verd.filter(v => v.verdict === 'CLEAN').length;
+  const top = (d.radar?.coins || []).slice(0, 6);
+  let rot = 0;
+  const boardFor = r => `<b>$${esc(r.symbol)}${r.pick ? ' ★' : ''}</b><div><span class="vd ${VTONE(r.verdict)}">${esc(r.verdict)}</span></div><small>score ${Number(r.score).toFixed(2)} · ${esc(usdS(r.mcap))}</small>`;
+  const nextBoard = () => top.length ? boardFor(top[rot++ % top.length]) : boardIdle;
   const boardIdle = v0 ? `<b>$${esc(v0.symbol)}</b><div><span class="vd ${VTONE(v0.verdict)}">${esc(v0.verdict)}</span></div><small>${esc(usdS(v0.mcap))} · ${v0.wins}/${v0.read} early up</small>` : `<small>No coin on the board yet. The first scan puts one here.</small>`;
   fl.innerHTML = `<div class="tape">${(agent.watch || []).length} WALLETS · ${(agent.coins || []).filter(c => !c.skipped).length} COINS · ${groups} GROUP${groups === 1 ? '' : 'S'} · ${clean}/${verd.length} CLEAN · ${(agent.credits?.used || 0).toLocaleString()} CR</div>
-    <div class="board" id="board">${boardIdle}</div>
+    <div class="board" id="board">${top.length ? boardFor(top[0]) : boardIdle}</div>
     ${octoFloor(d.agents?.octo)}
     ${Object.entries(CREW).map(([k, a]) => `<div class="desk" style="left:${a.x}%;top:${a.y + 5}%;--c:${a.c}"><div class="top"></div><span>${esc(a.desk)}</span></div>
       <div class="bot" id="bot-${k}" style="left:${a.x}%;top:${a.y - 6}%" title="${esc(a.name)}">${blob(k)}</div>`).join('')}
@@ -1360,6 +1385,37 @@ function renderDesk(){
       <div class="stat ${live(a.t) ? 'live' : ''}">${live(a.t) ? '● on the move' : a.t ? 'idle · ' + esc(agoMs(a.t)) : 'idle'}</div>
     </div>`;
   }).join('');
+
+  // CHIEF'S PICKS with the thesis behind each
+  const radar = d.radar?.coins || [];
+  const now = Date.now();
+  const picks = (d.picks || []).filter(p => p.status === 'live' || now - p.t < 86400e3).slice(0, 6);
+  const pkEl = $('picks');
+  const ul = (cls, items) => items?.length ? `<ul class="${cls}">${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+  pkEl.innerHTML = picks.length ? `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Chief's picks</h2><span class="tagline">the thesis behind each one</span></div><div class="coin">${picks.map(p => {
+      const nowR = radar.find(r => r.mint === p.mint);
+      const move = nowR && p.mcapAtPick ? (nowR.mcap / p.mcapAtPick - 1) : null;
+      const status = p.status === 'live' ? '<span class="vd good">LIVE PICK</span>' : p.status === 'withdrawn' ? `<span class="vd bad">WITHDRAWN · ${esc(p.withdrawnFor || '')}</span>` : '<span class="vd mid">EXPIRED</span>';
+      return `<div class="pick ${p.status === 'live' ? '' : 'out'}">
+        <div class="t1"><b>$${esc(p.symbol)}</b>${status}<span class="hint">score ${Number(p.score).toFixed(2)} · picked at ${esc(usdS(p.mcapAtPick))}${move != null ? ` · <span class="${cls(move)}">${move >= 0 ? '+' : ''}${Math.round(move * 100)}% since</span>` : ''} · ${esc(agoMs(p.first))}</span></div>
+        <h4>${esc(p.thesis.headline)}</h4>
+        <div><div class="sec">why it's on the desk</div>${ul('lg', p.thesis.why)}</div>
+        ${p.thesis.risks?.length ? `<div><div class="sec">what could kill it</div>${ul('lr', p.thesis.risks)}</div>` : ''}
+        <div><div class="sec">wrong if</div>${ul('lw', p.thesis.wrong)}</div>
+        <div class="acts"><a href="${p.src === 'octo' ? 'https://pump.fun/coin/' : 'https://dexscreener.com/solana/'}${esc(p.mint)}" target="_blank" rel="noopener">${p.src === 'octo' ? 'pump.fun' : 'Chart'}</a><button data-copy="${esc(p.mint)}">Copy CA</button></div>
+        <div class="note">${p.deep ? 'Thesis updated after the deep scan of its first buyers. ' : ''}${p.thesis.by === 'rules' ? 'Written from the desk\u2019s numbers.' : 'Written by Claude from the desk\u2019s numbers.'} A reason to watch, not a buy.</div>
+      </div>`; }).join('')}</div></div>` : '';
+  bindActs(pkEl);
+
+  // RADAR: every runner the last sweep looked at, best first
+  const rdEl = $('radar');
+  rdEl.innerHTML = radar.length ? `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Radar</h2><span class="tagline">${d.radar.swept} swept of ${d.radar.onTape} on the tape · ${esc(agoMs(d.radar.t))}</span></div>
+    <div class="pipe"><div class="rrow h"><span>coin</span><span>score</span><span>verdict</span><span style="text-align:right">mcap</span></div>
+    ${radar.map(r => `<div class="rrow"><b>${r.src === 'octo' ? '<span class="src" title="found by Octo on pump.fun">🐙</span>' : ''}$${esc(r.symbol)}${r.pick ? '<span class="star2" title="Chief\u2019s pick">★</span>' : ''}</b>
+      <span class="sbar" title="momentum ${r.momentum} · safety ${r.safety}">${Number(r.score).toFixed(2)}<i style="--w:${Math.round(r.score * 100)}%"></i></span>
+      <span><span class="vd ${VTONE(r.verdict)}">${esc(r.verdict)}</span></span>
+      <span class="mc">${esc(usdS(r.mcap))}</span></div>`).join('')}</div>
+    <p class="hint" style="margin:0">Score is half momentum (price, buy pressure, turnover or curve progress) and half safety (the worst flag from Social and Vet). The sweep runs every 15 minutes.</p></div>` : '';
 
   // the filter, in the order coins go through it
   const rows = d.pipeline?.rows || [];
@@ -1389,9 +1445,11 @@ function renderDesk(){
   // replay the latest events on the floor
   const evs = (d.events || []).filter(e => CREW[e.agent] || e.agent === 'octo').slice(0, 10).reverse();
   if(!evs.length) return;
-  let i = 0;
+  let i = 0, beat = 0;
   const step = () => {
     if($('agentView').hidden || document.hidden) return;
+    // every other beat the board shows the next runner on the radar instead of an agent report
+    if(top.length && beat++ % 2 === 1){ const b = $('board'); if(b){ b.classList.remove('talk'); b.innerHTML = nextBoard(); } return; }
     const e = evs[i++ % evs.length], board = $('board');
     if(!board) return;
     document.querySelectorAll('.agent.on').forEach(x => x.classList.remove('on'));
@@ -1402,7 +1460,7 @@ function renderDesk(){
       if(ob){ ob.classList.remove('on'); void ob.offsetWidth; ob.classList.add('on'); }
       if(tn && !RM){ tn.classList.remove('reach'); void tn.getBoundingClientRect(); tn.classList.add('reach'); }
       board.classList.add('talk'); board.innerHTML = `<small style="color:${OCTO_C}">Octo</small><span class="say">${esc(e.text)}</span>`;
-      floorHome = setTimeout(() => { board.classList.remove('talk'); board.innerHTML = boardIdle; tn?.classList.remove('reach'); }, 3700);
+      floorHome = setTimeout(() => { board.classList.remove('talk'); board.innerHTML = nextBoard(); tn?.classList.remove('reach'); }, 3700);
       return;
     }
     const a = CREW[e.agent], bot = $('bot-' + e.agent);
@@ -1411,7 +1469,7 @@ function renderDesk(){
     if(!RM){ bot.style.left = '50%'; bot.style.top = '45%'; }
     bot.classList.remove('on'); void bot.offsetWidth; bot.classList.add('on');
     setTimeout(() => { board.classList.add('talk'); board.innerHTML = `<small style="color:${a.c}">${a.name}</small><span class="say">${esc(e.text)}</span>`; }, RM ? 0 : 800);
-    floorHome = setTimeout(() => { board.classList.remove('talk'); board.innerHTML = boardIdle; bot.style.left = a.x + '%'; bot.style.top = (a.y - 6) + '%'; }, 3700);
+    floorHome = setTimeout(() => { board.classList.remove('talk'); board.innerHTML = nextBoard(); bot.style.left = a.x + '%'; bot.style.top = (a.y - 6) + '%'; }, 3700);
   };
   step();
   floorTimer = setInterval(step, 4600);

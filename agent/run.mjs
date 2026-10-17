@@ -12,6 +12,7 @@ import {createSolana, isAddr, short, BudgetError, bondingCurveOf, PUMP} from './
 import {pairInfo, candidates} from './lib/dex.mjs';
 import {checkSocial} from './lib/social.mjs';
 import {vetChain} from './lib/vet.mjs';
+import {momentum, safety, deskScore, buildThesis, claudeThesis} from './lib/thesis.mjs';
 import {crawlPump, crawlGecko, crawlChain, readCurves, octoKill, octoScore} from './lib/octo.mjs';
 import {DEFAULT_THRESHOLDS, freeKill, priority, socialKill, chiefVerdict} from './lib/desk.mjs';
 import {analyze, matchPrevious, round} from './lib/cabal.mjs';
@@ -26,7 +27,7 @@ const freshState = () => ({
   runs: {}, watch: [], buys: [], overlaps: {}, coins: [], queue: [],
   analysis: {coinsAnalyzed: 0, bots: [], repeaters: [], clusters: []},
   judged: [], alerts: [], recaps: [], log: [],
-  desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null},
+  desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null, radar: null, picks: [], socialCache: {}, killed: {}, pinged: {}},
   octo: {at: 0, reqs: 0, touched: 0, grabbed: 0, inked: 0, ok: true, error: '', grabs: [], pinged: {}, creators: {}},
   credits: {month: '', used: 0, day: '', today: 0, lastRun: 0},
 });
@@ -64,6 +65,7 @@ function compactCoin(c){
 function deskAgents(state, creditsThisRun){
   const ev = a => state.desk.events.find(e => e.agent === a);
   const v0 = state.desk.verdicts[0];
+  const livePick = (state.desk.picks || []).find(p => p.status === 'live');
   const coin0 = v0 && state.coins.find(c => c.mint === v0.mint);
   const vet = coin0?.desk?.vet, soc = coin0?.desk?.social;
   const pipe = state.desk.pipeline;
@@ -73,7 +75,7 @@ function deskAgents(state, creditsThisRun){
   const buys24 = state.buys.filter(b => b.t * 1000 > Date.now() - 86400e3).length;
   const card = (agent, role, o) => ({agent, role, last: ev(agent)?.text || '', t: ev(agent)?.t || 0, ...o});
   return {
-    chief: card('chief', 'never takes a position', {big: v0 ? `$${v0.symbol} · ${v0.verdict}` : 'no verdict yet', metric: 'clean today', value: recent.length ? clean / recent.length : null, small: `${clean} clean · ${recent.length - clean} flagged (24h)`}),
+    chief: card('chief', 'never takes a position', {big: livePick ? `pick: $${livePick.symbol}` : v0 ? `$${v0.symbol} · ${v0.verdict}` : 'no verdict yet', metric: 'clean today', value: recent.length ? clean / recent.length : null, small: `${clean} clean · ${recent.length - clean} flagged (24h)`}),
     scan: card('scan', 'finding what moves', {big: pipe ? `${pipe.rows.filter(r => r.free === 'PASS').length}/${pipe.seen} pass` : '—', metric: 'free_kill survivors', value: pipe && pipe.seen ? pipe.rows.filter(r => r.free === 'PASS').length / Math.min(pipe.seen, 14) : null}),
     vet: card('vet', 'chain risk, is it real', {big: vet ? vet.worst : '—', metric: vet ? `${vet.worst} · $${v0.symbol}` : 'no coin vetted', value: vet ? vet.score : null}),
     social: card('social', "the project's X account", {big: soc ? (soc.handle ? '@' + soc.handle : soc.kind) : '—', metric: soc ? `${soc.worst} · $${v0.symbol}` : 'no account read', value: soc ? soc.score : null}),
@@ -228,10 +230,14 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   /* ---------- scan: fresh runners -> first buyers -> cabal hunt ---------- */
   /* SOCIAL: the project's X account. Remembers every handle so a reused one gets caught. */
   async function social(item){
+    const cached = state.desk.socialCache[item.mint];
+    if(cached && now - cached.t < 6 * 3600e3) return cached.s;
     const seen = new Map(Object.entries(state.desk.handles).map(([h, ms]) => [h, new Set(ms)]));
     const s = await checkSocial(item, {token: env.X_BEARER_TOKEN, fetchImpl, seenHandles: seen, now});
     if(s.handle){ const h = s.handle.toLowerCase(); state.desk.handles[h] = [...new Set([...(state.desk.handles[h] || []), item.mint])].slice(-10); }
     delete s.account?.bio;
+    state.desk.socialCache[item.mint] = {t: now, s};
+    for(const [m, c] of Object.entries(state.desk.socialCache)) if(now - c.t > 12 * 3600e3) delete state.desk.socialCache[m];
     deskEvent('social', `$${item.symbol}: ${s.line}${s.score >= 0.5 ? ` · ${s.worst} ${s.score}` : ''}`);
     return s;
   }
@@ -288,6 +294,18 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       deskEvent('chief', `$${res.symbol} is ${chief.verdict}${chief.reasons[0] ? ` (${chief.reasons[0]})` : ''}`);
       state.desk.verdicts = [{t: now, mint: res.mint, symbol: res.symbol, verdict: chief.verdict, reasons: chief.reasons, social: s?.line || '', vet: v.line, mcap: d.mcap, wins: d.wins, read: d.read},
         ...state.desk.verdicts.filter(x => x.mint !== res.mint)].slice(0, 40);
+      // the deep scan sharpens the radar and the Chief's thesis, or withdraws the pick
+      const rr = state.desk.radar?.coins?.find(x => x.mint === res.mint);
+      if(rr) Object.assign(rr, {verdict: chief.verdict, reasons: chief.reasons, deep: true, vet: v.line});
+      const pk = state.desk.picks.find(x => x.mint === res.mint && x.status === 'live');
+      if(pk && chief.verdict === 'CLEAN'){
+        const t = buildThesis({symbol: res.symbol, mcap: d.mcap || pk.mcap, ath: pk.ath, src: pk.src}, {social: s, vet: v, mom: {facts: pk.momFacts || [], pressure: pk.pressure}, deep: true});
+        pk.thesis = pk.thesis.by === 'rules' ? t : {...pk.thesis, why: [...pk.thesis.why, ...t.why.filter(x => /first \d+ buyers|early buyers/.test(x))].slice(0, 7), risks: [...new Set([...pk.thesis.risks, ...t.risks])].slice(0, 6)};
+        pk.deep = true;
+      } else if(pk){
+        pk.status = 'withdrawn'; pk.withdrawnFor = chief.verdict; pk.t = now;
+        alert('pick', `Chief withdraws $${res.symbol}`, chief.verdict, `↩️ <b>Chief withdraws $${esc(res.symbol)}</b>: the deep scan says ${esc(chief.verdict)}${chief.reasons[0] ? ` (${esc(chief.reasons[0])})` : ''}`, {mint: res.mint});
+      }
       const icon = chief.verdict === 'CLEAN' ? '✅' : '⚠️';
       alert('verdict', `$${res.symbol} · ${chief.verdict}`, [v.line, s?.line, `${d.wins}/${d.read} early wallets in profit`].filter(Boolean).join('\n'),
         `🧑‍⚖️ <b>$${esc(res.symbol)}</b> · ${icon} <b>${chief.verdict}</b>${d.mcap ? ' · ' + usd(d.mcap) + ' mcap' : ''}\n` +
@@ -415,37 +433,94 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   }
 
   /* the filter: free_kill -> social_kill -> chain (scan + vet) -> verdict. The order is the whole point. */
-  async function scanJob(){
-    if(creditsLeft() < cfg.scan.creditBudgetPerRun){ note('Monthly credit budget nearly used; skipping discovery.'); return []; }
-    const queued = await queuedItems(state.queue);
-    const exclude = new Set([...state.coins.map(c => c.mint), ...state.queue, ...Object.keys(state.desk.killed || {})]);
+  /* SWEEP, every wake-up: every live runner gets a quick pass. free kill -> social -> holders -> verdict -> score */
+  async function sweepJob(){
+    const sw = cfg.desk.sweep, soft = cfg.desk.soft;
+    const exclude = new Set(Object.keys(state.desk.killed));
     const seen = await candidates({exclude}, fetchImpl);
-    const dexPipe = seen.map(c => ({c, src: 'dex', free: freeKill(c, cfg.desk.hard, now)}));
+    const dexPipe = seen.map(c => ({c: {...c, src: 'dex'}, src: 'dex', free: freeKill(c, cfg.desk.hard, now)}));
     // Octo's grabs already passed its own curve rules, so they enter after the free kill
     const octoPipe = state.octo.grabs.filter(g => !exclude.has(g.mint) && !seen.some(c => c.mint === g.mint)).map(c => ({c, src: 'octo', free: {pass: true}}));
     const pipe = [...octoPipe, ...dexPipe];
-    const dexAlive = dexPipe.filter(p => p.free.pass).sort((a, b) => priority(b.c) - priority(a.c));
-    const alive = [];
-    for(let i = 0; i < Math.max(octoPipe.length, dexAlive.length); i++){ if(octoPipe[i]) alive.push(octoPipe[i]); if(dexAlive[i]) alive.push(dexAlive[i]); }
-    deskEvent('scan', `${seen.length} coin${seen.length === 1 ? '' : 's'} on the tape, ${alive.length} survive the free kill`);
-    const picks = [];
-    for(const p of alive.slice(0, cfg.desk.socialChecksPerRun)){
-      p.social = await social(p.c);
-      p.socialKill = socialKill(p.social, cfg.desk.soft);
-      if(!p.socialKill.pass){ state.desk.killed = {...(state.desk.killed || {}), [p.c.mint]: now}; }
-      if(p.socialKill.pass && picks.length < cfg.scan.coinsPerRun){ p.chain = true; picks.push({...p.c, social: p.social}); }
+    const alive = pipe.filter(p => p.free.pass).map(p => (p.mom = momentum(p.c), p)).sort((a, b) => b.mom.value - a.mom.value).slice(0, sw.maxCoins);
+    deskEvent('scan', `${pipe.length} runners on the tape, ${alive.length} survive the free kill`);
+    sol.budget(Math.min(sw.creditBudget, Math.max(0, creditsLeft())));
+    const radar = [];
+    for(const p of alive){
+      try {
+        p.social = await social(p.c);
+        p.socialKill = socialKill(p.social, soft);
+        if(!p.socialKill.pass) state.desk.killed[p.c.mint] = now;
+        const supply = p.c.mint.endsWith('pump') ? 1e9 : Number((await sol.rpc('getTokenSupply', [p.c.mint]))?.value?.uiAmount) || 0;
+        p.vet = await vetChain({mint: p.c.mint, supply}, sol.rpc);
+        const deep = state.coins.find(c => c.mint === p.c.mint && c.desk?.verdict);
+        const chief = deep ? {verdict: deep.desk.verdict, reasons: deep.desk.reasons} : chiefVerdict({social: p.social, vet: p.vet}, soft);
+        p.verdict = chief.verdict;
+        const saf = safety(p.social, deep ? deep.desk.vet : p.vet);
+        radar.push({mint: p.c.mint, symbol: p.c.symbol, src: p.src, mcap: p.c.mcap, ath: p.c.ath || 0, liq: p.c.liq, vol24: p.c.vol24, change1h: p.c.change1h, change24: p.c.change24,
+          progress: p.c.progress ?? null, momentum: p.mom.value, safety: saf, score: deskScore(p.mom.value, saf), verdict: chief.verdict, reasons: chief.reasons, deep: !!deep,
+          social: p.social?.line || '', vet: (deep ? deep.desk.vet.line : p.vet.line) || '', t: now, _p: p});
+      } catch(e){
+        if(e instanceof BudgetError){ note('Sweep budget used up; the rest of the runners wait for the next wake-up.'); break; }
+        note(`Sweep $${p.c.symbol}: ${e.message}`);
+      }
     }
-    note(`Discovery: ${seen.length} on DexScreener, ${octoPipe.length} from Octo, ${alive.length} passed free_kill, scanning ${picks.map(f => '$' + f.symbol).join(', ') || 'none'}.`);
-    const done = await scanCoins([...queued, ...picks]);
-    const scannedNow = new Set(done.map(r => r.mint));
-    state.desk.pipeline = {t: now, seen: seen.length + octoPipe.length, rows: pipe.sort((a, b) => (b.chain ? 3 : b.social ? 2 : b.free.pass ? 1 : 0) - (a.chain ? 3 : a.social ? 2 : a.free.pass ? 1 : 0) || priority(b.c) - priority(a.c)).slice(0, 14).map(p => ({
+    sol.budget(null);
+    radar.sort((a, b) => b.score - a.score);
+
+    // CHIEF'S PICKS: clean coins with the best score get a written thesis
+    const fresh = radar.filter(r => r.verdict === 'CLEAN' && r.score >= sw.pick_score).slice(0, sw.maxPicks);
+    for(const r of fresh){
+      const p = r._p, known = state.desk.picks.find(x => x.mint === r.mint && x.status === 'live');
+      let thesis = buildThesis({...p.c, symbol: r.symbol}, {social: p.social, vet: p.vet, mom: p.mom});
+      if(!known) thesis = await claudeThesis(r, thesis, {momentum: p.mom.facts, vet: p.vet.facts, social: p.social?.line, mcap: r.mcap}, {...brain, model: cfg.brain.judgeModel});
+      const pick = {mint: r.mint, symbol: r.symbol, src: r.src, score: r.score, mcap: r.mcap, verdict: r.verdict, thesis: known && known.thesis.by !== 'rules' ? known.thesis : thesis,
+        status: 'live', first: known?.first || now, t: now, mcapAtPick: known?.mcapAtPick || r.mcap, ath: r.ath, momFacts: p.mom.facts, pressure: p.mom.pressure};
+      state.desk.picks = [pick, ...state.desk.picks.filter(x => x.mint !== r.mint)].slice(0, 15);
+      r.pick = true;
+      if(!state.desk.pinged[r.mint] || now - state.desk.pinged[r.mint] > 6 * 3600e3){
+        state.desk.pinged[r.mint] = now;
+        const th = pick.thesis;
+        alert('pick', `Chief's pick: $${r.symbol}`, th.headline,
+          `🧠 <b>CHIEF'S PICK · $${esc(r.symbol)}</b> · score ${r.score.toFixed(2)} · ${usd(r.mcap)}\n<b>${esc(th.headline)}</b>\n\n<b>Why it's on the desk</b>\n${th.why.map(x => '• ' + esc(x)).join('\n')}` +
+          (th.risks.length ? `\n\n<b>What could kill it</b>\n${th.risks.map(x => '• ' + esc(x)).join('\n')}` : '') +
+          `\n\n<b>Wrong if</b>\n${th.wrong.map(x => '• ' + esc(x)).join('\n')}\n\n${r.src === 'octo' ? `<a href="https://pump.fun/coin/${r.mint}">pump.fun</a>` : chart(r.mint)} · <code>${r.mint}</code>\n<i>A reason to watch, not a buy. First In never takes a position.</i>`, {mint: r.mint});
+      }
+      deskEvent('chief', `$${r.symbol} is my pick: ${pick.thesis.headline.replace(/^\$\S+:\s*/, '')}`);
+    }
+    if(!fresh.length) deskEvent('chief', radar.length ? `${radar.length} runners swept, nothing clean and strong enough to pick` : 'no runners worth a look right now');
+    // a live pick that has since been flagged gets withdrawn
+    for(const pk of state.desk.picks){
+      const r = radar.find(x => x.mint === pk.mint);
+      if(pk.status === 'live' && r && r.verdict !== 'CLEAN'){ pk.status = 'withdrawn'; pk.withdrawnFor = r.verdict; pk.t = now;
+        alert('pick', `Chief withdraws $${pk.symbol}`, r.verdict, `↩️ <b>Chief withdraws $${esc(pk.symbol)}</b>: now ${esc(r.verdict)}${r.reasons?.[0] ? ` (${esc(r.reasons[0])})` : ''}`, {mint: pk.mint}); }
+      if(pk.status === 'live' && now - pk.t > DAY){ pk.status = 'expired'; }
+    }
+
+    state.desk.radar = {t: now, swept: radar.length, onTape: pipe.length, coins: radar.slice(0, 25).map(({_p, ...r}) => r)};
+    const sweptIds = new Set(radar.map(r => r.mint));
+    state.desk.pipeline = {t: now, seen: pipe.length, rows: pipe.sort((a, b) => (sweptIds.has(b.c.mint) ? 2 : b.free.pass ? 1 : 0) - (sweptIds.has(a.c.mint) ? 2 : a.free.pass ? 1 : 0) || (b.mom?.value || 0) - (a.mom?.value || 0)).slice(0, 16).map(p => ({
       mint: p.c.mint, symbol: p.c.symbol, mcap: p.c.mcap, vol24: p.c.vol24, src: p.src,
       free: p.free.pass ? 'PASS' : p.free.reason, social: p.social ? (p.socialKill.pass ? 'PASS' : p.socialKill.reason) : null,
-      chain: p.chain ? (scannedNow.has(p.c.mint) ? 'SCANNED' : 'BUDGET') : null,
+      chain: p.verdict || null,
     }))};
-    // forget social kills after 3 days so the list stays small
-    for(const [m, t] of Object.entries(state.desk.killed || {})) if(now - t > 3 * DAY) delete state.desk.killed[m];
-    return done;
+    for(const [m, t] of Object.entries(state.desk.killed)) if(now - t > 3 * DAY) delete state.desk.killed[m];
+    for(const [m, t] of Object.entries(state.desk.pinged)) if(now - t > 2 * DAY) delete state.desk.pinged[m];
+    note(`Sweep: ${pipe.length} on the tape, ${radar.length} swept, ${fresh.length} pick${fresh.length === 1 ? '' : 's'}.`);
+    return radar;
+  }
+
+  /* DEEP SCAN, every 3 hours: the first 30 buyers of the radar's best coins, then the cabal hunt */
+  async function scanJob(){
+    if(creditsLeft() < cfg.scan.creditBudgetPerRun){ note('Monthly credit budget nearly used; skipping the deep scan.'); return []; }
+    const queued = await queuedItems(state.queue);
+    const deepDone = new Set(state.coins.map(c => c.mint));
+    const radar = state.desk.radar?.coins || [];
+    const picks = radar.filter(r => !deepDone.has(r.mint) && !state.desk.killed[r.mint] && !state.queue.includes(r.mint))
+      .sort((a, b) => (b.pick ? 1 : 0) - (a.pick ? 1 : 0) || b.score - a.score).slice(0, cfg.scan.coinsPerRun)
+      .map(r => ({...r, social: state.desk.socialCache[r.mint]?.s}));
+    note(`Deep scan: ${picks.map(f => '$' + f.symbol).join(', ') || 'nothing new on the radar'}.`);
+    return scanCoins([...queued, ...picks]);
   }
   async function queuedItems(mints){
     if(!mints.length) return [];
@@ -468,6 +543,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
           bestEarlyWalletPnlSol: best ? round(best.pos.pnl, 2) : 0, stillHolding: read.filter(b => b.pos.held > 0).length};
       }),
       clusters: state.analysis.clusters.filter(c => c.verdict && c.verdict !== 'noise').slice(0, 5).map(c => ({verdict: c.verdict, confidence: c.confidence, size: c.size, coins: c.coins.length, symbols: c.coins.map(x => x.symbol), why: c.why})),
+      chiefPicks: state.desk.picks.filter(p => p.first >= since).map(p => ({symbol: p.symbol, status: p.status, withdrawnFor: p.withdrawnFor, headline: p.thesis.headline})),
       verdicts: state.desk.verdicts.filter(v => v.t >= since).slice(0, 10).map(v => ({symbol: v.symbol, verdict: v.verdict, why: v.reasons, vet: v.vet, social: v.social})),
       topRepeaters: state.analysis.repeaters.slice(0, 5).map(r => ({wallet: short(r.owner), coins: r.hits, pnlSol: r.pnl, wins: r.wins})),
       creditsToday: state.credits.today + sol.credits,
@@ -493,6 +569,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   if(!state.paused){
     if(cfg.desk.octo.enabled) jobs.push(['octo', octoJob]);
     if(wants('watch')) jobs.push(['watch', watchWallets]);
+    if(cfg.desk.sweep.enabled) jobs.push(['sweep', sweepJob]);
     if(wants('scan')) jobs.push(['scan', async () => { const done = await scanJob(); await hunt(); judgeCoins(done); }]);
     else if(state.queue.length) jobs.push(['scan-queue', async () => { const done = await scanCoins(await queuedItems(state.queue.slice(0, 2))); if(done.length){ await hunt(); judgeCoins(done); } }]);
   }
