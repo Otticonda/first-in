@@ -1,0 +1,43 @@
+{
+  "seedWatch": [],
+  "watch": {
+    "sigsPerWallet": 15,
+    "alertMinSol": 0.2,
+    "maxAlertsPerWallet": 3,
+    "overlapMin": 2,
+    "overlapWindowHours": 24,
+    "maxWallets": 60
+  },
+  "scan": {
+    "coinsPerRun": 2,
+    "buyersPerCoin": 30,
+    "minMcapUsd": 250000,
+    "maxAgeHours": 72,
+    "minLiquidityUsd": 15000,
+    "maxPagesPump": 300,
+    "maxPagesOther": 150,
+    "creditBudgetPerRun": 1500,
+    "keepCoins": 50
+  },
+  "cabal": {
+    "minSharedCoins": 2,
+    "botCoinShare": 0.4,
+    "syncExitSeconds": 180,
+    "judgeMinScore": 6,
+    "alertMinConfidence": 60
+  },
+  "autoWatch": {
+    "enabled": true,
+    "maxAgentWallets": 25,
+    "minConfidence": 70,
+    "repeaterMinCoins": 3
+  },
+  "brain": {
+    "judgeModel": "claude-haiku-5-5",
+    "recapModel": "claude-sonnet-5-5",
+    "maxClustersPerRun": 5
+  },
+  "budget": {
+    "monthlyCredits": 850000
+  }
+}

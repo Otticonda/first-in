@@ -186,6 +186,7 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
 @media (min-width:620px){.kpis.k4{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .wsec{padding:10px 16px;font-size:10px;letter-spacing:.15em;color:var(--dim);text-transform:uppercase;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .wsec .spacer{flex:1}
+@media (max-width:460px){.tabs button{padding:11px 2px;font-size:10px;letter-spacing:.03em;gap:3px;min-width:0}.tabs .badge{padding:1px 3px}}
 @media (max-width:420px){.status .txt{display:none}.brand{font-size:18px}.wbig b{font-size:26px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -223,6 +224,7 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
     <button role="tab" id="tabWallet" aria-selected="false">Wallet</button>
     <button role="tab" id="tabRep" aria-selected="false">Repeat <span class="badge n" id="repCount">0</span></button>
     <button role="tab" id="tabWatch" aria-selected="false">Watch <span class="badge n" id="watchCount">0</span></button>
+    <button role="tab" id="tabAgent" aria-selected="false">Agent</button>
   </div>
 
   <!-- SCAN -->
@@ -304,6 +306,24 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
         </div>
       </details>
     </div>
+  </section>
+
+  <!-- AGENT -->
+  <section id="agentView" style="display:flex;flex-direction:column;gap:16px" hidden>
+    <div class="panel">
+      <div class="ph"><h2>Agent</h2><span class="tagline" id="agentAge">runs on its own · 24/7</span></div>
+      <p class="hint" style="margin:0">Watches wallets every 15 min, scans fresh runners every 2 hours, hunts cabals, and writes a daily recap. It pings Telegram; this is its log.</p>
+      <div class="kpis k4" id="agentKpis"></div>
+      <div class="row" style="align-items:center">
+        <button class="sm" id="agentRefresh">Refresh</button>
+        <button class="sm" id="agentImport">Load its scans</button>
+        <button class="sm" id="agentWatchImport">Copy its watchlist</button>
+        <span class="hint" id="agentMsg"></span>
+      </div>
+    </div>
+    <div id="agentRecap"></div>
+    <div id="agentGroups"></div>
+    <div id="agentFeed"></div>
   </section>
 </main>
 
@@ -1117,6 +1137,72 @@ $('auto').onchange = () => {
   if($('auto').checked) autoTimer = setInterval(() => { if(document.visibilityState === 'visible') checkWatch(); }, 180000);
 };
 
+/* ---------- agent: reads what the scheduled agent saved on the agent-data branch ---------- */
+const AGENT_URL = 'https://raw.githubusercontent.com/Otticonda/first-in/agent-data/agent.json';
+let agent = null, agentErr = '', agentLoaded = 0;
+async function loadAgent(){
+  $('agentMsg').textContent = 'Loading…';
+  try {
+    const r = await fetch(AGENT_URL + '?t=' + Date.now(), {cache: 'no-store'});
+    if(!r.ok) throw new Error(r.status === 404 ? 'none' : 'HTTP ' + r.status);
+    agent = await r.json(); agentErr = '';
+  } catch(e){ agentErr = e.message || 'offline'; }
+  agentLoaded = Date.now();
+  $('agentMsg').textContent = '';
+  renderAgent();
+}
+const VERDICT = {cabal: ['dev','Cabal'], smart_money: ['smart','Smart money'], bot_farm: ['snipe','Bot farm'], noise: ['warn','Noise']};
+const AICON = {buy: '👀', overlap: '🔥', cluster: '🕵️', coin: '🔎', recap: '📋', watch: '➕'};
+const agoMs = ms => ms ? ago(ms / 1000) : 'never';
+const kpi = (k, v) => `<div class="kpi"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>`;
+function groupCard(c){
+  const v = VERDICT[c.verdict] || ['warn', 'Unjudged'];
+  return `<div class="w">
+    <div class="wid"><span class="rank">${c.size} wallets</span><span class="addr">${c.coins.length} coins together</span></div>
+    <div class="pnl"><b class="${cls(c.pnl)}">${esc(sSol(c.pnl))}</b><small>${c.confidence != null ? c.confidence + '% sure' : 'not judged'}</small></div>
+    <div class="tags"><span class="t ${v[0]}">${v[1]}</span>${c.sameSlotCoins ? `<span class="t snipe">Same block ×${c.sameSlotCoins}</span>` : ''}${c.syncExitCoins ? `<span class="t moved">Synced exits ×${c.syncExitCoins}</span>` : ''}${c.devLinked ? '<span class="t dev">Dev linked</span>' : ''}</div>
+    ${c.why ? `<p class="hint" style="grid-column:1/-1;margin:0;color:var(--muted)">${esc(c.why)}</p>` : ''}
+    <div class="chips">${c.coins.map(x => `<span class="chip ${cls(x.pnl)}">$${esc(x.symbol)} · ${x.wallets}W · +${esc(dur(x.avgSecs))}</span>`).join('')}</div>
+    <div class="acts">${c.wallets.slice(0, 8).map(a => `<button class="star" data-watch="${esc(a)}" aria-pressed="${isWatched(a)}">${isWatched(a) ? '★' : '☆'} ${esc(labelOf(a) || short(a))}</button>`).join('')}</div>
+  </div>`;
+}
+function renderAgent(){
+  const kp = $('agentKpis'), rc = $('agentRecap'), gr = $('agentGroups'), fd = $('agentFeed');
+  if(!agent){
+    kp.innerHTML = ''; gr.innerHTML = ''; fd.innerHTML = '';
+    rc.innerHTML = `<div class="empty"><b>${agentErr === 'none' ? 'Agent not started yet' : agentErr ? 'Agent data unavailable' : 'Loading'}</b><span>${agentErr === 'none' ? 'Once the GitHub Action runs, its scans, wallet groups and recaps show up here.' : agentErr ? 'Could not reach the agent’s data. Try Refresh in a minute.' : ''}</span></div>`;
+    return;
+  }
+  $('agentAge').textContent = agent.paused ? 'paused' : 'updated ' + agoMs(agent.updatedAt);
+  kp.innerHTML = kpi('Wallet check', agoMs(agent.runs?.watch)) + kpi('Last scan', agoMs(agent.runs?.scan)) + kpi('Watching', (agent.watch || []).length) + kpi('Credits / mo', (agent.credits?.used || 0).toLocaleString());
+  const r = agent.recaps?.[0];
+  rc.innerHTML = r ? `<div class="alert"><h3>${esc(r.headline)}</h3><div style="white-space:pre-wrap;color:var(--fg)">${esc(r.body)}</div><span class="hint">${esc(agoMs(r.t))} · ${r.by === 'rules' ? 'rule-based' : 'written by Claude'}</span></div>` : '';
+  const cl = (agent.analysis?.clusters || []).filter(c => c.verdict !== 'noise').slice(0, 8);
+  gr.innerHTML = cl.length ? `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Wallet groups</h2><span class="tagline">${agent.analysis.coinsAnalyzed} coins analyzed</span></div><div class="coin">${cl.map(groupCard).join('')}</div></div>` : '';
+  const al = (agent.alerts || []).filter(a => a.kind !== 'recap').slice(0, 40);
+  fd.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Activity</h2></div>${al.length ? `<div class="coin">${al.map(a => `<div class="w" style="align-items:center">
+      <div class="wid"><span aria-hidden="true">${AICON[a.kind] || '•'}</span><span class="addr" style="font-size:12.5px;font-weight:500">${esc(a.title)}</span></div>
+      <div class="pnl"><small>${esc(agoMs(a.t))}</small></div>
+      ${a.body ? `<p class="hint" style="grid-column:1/-1;margin:0;white-space:pre-wrap">${esc(a.body)}</p>` : ''}
+      ${a.mint ? `<div class="acts"><a href="https://dexscreener.com/solana/${esc(a.mint)}" target="_blank" rel="noopener">Chart</a><button data-copy="${esc(a.mint)}">Copy CA</button></div>` : ''}
+    </div>`).join('')}</div>` : `<div class="empty"><b>Quiet so far</b><span>Buys, overlaps, scans and cabal finds land here.</span></div>`}</div>`;
+  bindActs(gr); bindActs(fd);
+}
+$('agentRefresh').onclick = loadAgent;
+$('agentImport').onclick = () => {
+  const got = (agent?.coins || []).filter(c => !c.skipped);
+  if(!got.length){ $('agentMsg').textContent = 'No agent scans yet.'; return; }
+  const mine = new Set(got.map(c => c.mint));
+  coins = [...got, ...coins.filter(c => !mine.has(c.mint))];
+  store.set('coins', coins); renderAll(); tab('scan');
+};
+$('agentWatchImport').onclick = () => {
+  let n = 0;
+  for(const w of agent?.watch || []) if(!isWatched(w.a)){ watch.push({a: w.a, label: w.label || ''}); n++; }
+  store.set('watch', watch); renderAll();
+  $('agentMsg').textContent = n ? `Added ${n} to your watchlist.` : 'Nothing new to add.';
+};
+
 /* ---------- settings + tabs ---------- */
 function showSettings(open){ $('setup').hidden = !open; if(open) $('keyIn').value = ''; }
 $('openSettings').onclick = () => showSettings($('setup').hidden);
@@ -1130,20 +1216,22 @@ $('saveKey').onclick = async () => {
   catch(e){ rpcUrl = prev; $('keyStatus').textContent = e.message; }
 };
 function tab(which){
-  for(const [t, v] of [['Scan','scan'],['Wallet','wallet'],['Rep','rep'],['Watch','watch']]){
+  for(const [t, v] of [['Scan','scan'],['Wallet','wallet'],['Rep','rep'],['Watch','watch'],['Agent','agent']]){
     $('tab'+t).setAttribute('aria-selected', which === v);
     $(v+'View').hidden = which !== v;
   }
   store.set('tab', which);
+  if(which === 'agent' && Date.now() - agentLoaded > 120000) loadAgent();
 }
 $('tabScan').onclick = () => tab('scan');
 $('tabRep').onclick = () => tab('rep');
 $('tabWallet').onclick = () => tab('wallet');
 $('tabWatch').onclick = () => tab('watch');
-function renderAll(){ renderCoins(); renderReps(); renderWatchList(); renderFeed(); renderWallet(); }
+$('tabAgent').onclick = () => tab('agent');
+function renderAll(){ renderCoins(); renderReps(); renderWatchList(); renderFeed(); renderWallet(); renderAgent(); }
 
 /* ---------- boot ---------- */
-tab(['scan','wallet','rep','watch'].includes(location.hash.slice(1)) ? location.hash.slice(1) : store.get('tab', 'scan'));
+tab(['scan','wallet','rep','watch','agent'].includes(location.hash.slice(1)) ? location.hash.slice(1) : store.get('tab', 'scan'));
 if(store.get('auto', false)){ $('auto').checked = true; $('auto').onchange(); }
 renderAll();
 rpc('getSlot', []).then(s => setLink(true, 'Linked · slot ' + Number(s).toLocaleString())).catch(() => setLink(false, 'RPC offline'));
