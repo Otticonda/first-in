@@ -346,7 +346,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
     const seen = await candidates({exclude}, fetchImpl);
     const pipe = seen.map(c => ({c, free: freeKill(c, cfg.desk.hard, now)}));
     const alive = pipe.filter(p => p.free.pass).sort((a, b) => priority(b.c) - priority(a.c));
-    deskEvent('scan', `${seen.length} coins on the tape, ${alive.length} survive free_kill`);
+    deskEvent('scan', `${seen.length} coin${seen.length === 1 ? '' : 's'} on the tape, ${alive.length} survive the free kill`);
     const picks = [];
     for(const p of alive.slice(0, cfg.desk.socialChecksPerRun)){
       p.social = await social(p.c);

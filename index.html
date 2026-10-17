@@ -186,6 +186,60 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
 @media (min-width:620px){.kpis.k4{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .wsec{padding:10px 16px;font-size:10px;letter-spacing:.15em;color:var(--dim);text-transform:uppercase;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .wsec .spacer{flex:1}
+/* desk */
+.floor{position:relative;aspect-ratio:4/3.3;background:#070B11;border:1px solid var(--line);overflow:hidden;
+  background-image:linear-gradient(rgba(63,216,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(63,216,255,.05) 1px,transparent 1px);background-size:20px 20px}
+@media (min-width:620px){.floor{aspect-ratio:16/9}}
+.tape{position:absolute;left:0;right:0;top:0;padding:7px 10px;font-size:10px;letter-spacing:.06em;color:var(--up);background:rgba(3,6,10,.85);border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.board{position:absolute;left:50%;top:15%;transform:translateX(-50%);width:54%;min-height:15%;background:#03070C;border:1px solid var(--line2);box-shadow:0 0 0 3px #0B121A;padding:7px 9px;display:flex;flex-direction:column;justify-content:center;gap:3px;text-align:center}
+.board b{font:700 clamp(15px,4.6vw,22px)/1 var(--f-display);letter-spacing:.04em}
+.board small{font-size:10px;color:var(--muted);letter-spacing:.04em}
+.board{top:13%;height:24%;overflow:hidden}
+.board .say{font-size:11px;line-height:1.35;color:var(--fg);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.board.talk{border-color:var(--cy)}
+.vd{font:700 10px/1 var(--f-mono);letter-spacing:.08em;padding:3px 6px;border:1px solid currentColor;border-radius:2px;white-space:nowrap}
+.vd.good{color:var(--up)} .vd.bad{color:var(--dn)} .vd.mid{color:var(--amb)}
+.desk{position:absolute;transform:translate(-50%,-50%);width:23%;display:flex;flex-direction:column;align-items:center;gap:2px}
+.desk .top{width:100%;height:16px;background:#121B25;border:1px solid var(--line2);border-radius:2px;position:relative}
+.desk .top::before{content:"";position:absolute;left:28%;right:28%;bottom:100%;height:13px;background:#0A1118;border:1px solid var(--line2);border-bottom:0}
+.desk .top::after{content:"";position:absolute;left:33%;right:33%;bottom:calc(100% + 3px);height:6px;background:var(--c,#3FD8FF);opacity:.35}
+.desk span{font-size:8.5px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;margin-top:1px}
+.bot{position:absolute;width:clamp(30px,4.6vw,44px);height:clamp(30px,4.6vw,44px);transform:translate(-50%,-50%);transition:left .9s cubic-bezier(.4,.1,.2,1),top .9s cubic-bezier(.4,.1,.2,1);z-index:2}
+.bot svg{width:100%;height:100%;display:block;filter:drop-shadow(0 2px 0 rgba(0,0,0,.5))}
+.bot.on svg{animation:hop .45s ease-in-out 2}
+@keyframes hop{50%{transform:translateY(-4px)}}
+.crew{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+@media (min-width:620px){.crew{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.agent{background:var(--panel);padding:11px 12px;display:flex;flex-direction:column;gap:7px;min-width:0;border-top:2px solid var(--c);transition:background .3s}
+.agent.on{background:#0E1822}
+.agent .hd{display:flex;gap:8px;align-items:center}
+.agent .hd svg{width:24px;height:24px;flex:none}
+.agent h3{margin:0;font:700 14px/1 var(--f-display);letter-spacing:.08em;color:var(--c);text-transform:uppercase}
+.agent .role{font-size:10px;color:var(--dim)}
+.agent .big{font:700 13px/1.2 var(--f-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent .m{display:flex;justify-content:space-between;gap:6px;font-size:10px;color:var(--muted)}
+.agent .m b{color:var(--fg);font-variant-numeric:tabular-nums}
+.agent .bar{height:3px;background:var(--line2)} .agent .bar i{display:block;height:100%;background:var(--c)}
+.agent .last{font-size:10.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em}
+.agent .stat{font-size:9.5px;letter-spacing:.06em;color:var(--dim)} .agent .stat.live{color:var(--up)}
+.pipe{background:var(--panel);border:1px solid var(--line)}
+.pipe .order{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line);font-size:11px}
+.pipe .order span{padding:4px 7px;border:1px solid var(--line2);border-radius:2px;color:var(--muted)}
+.pipe .order em{font-style:normal;color:var(--dim)}
+.prow{display:grid;grid-template-columns:minmax(0,1.1fr) repeat(3,minmax(0,1fr));gap:6px;padding:8px 14px;border-top:1px solid var(--line);font-size:10.5px;align-items:center}
+.prow:first-of-type{border-top:0}
+.prow.h{color:var(--dim);font-size:9.5px;letter-spacing:.06em;padding-top:10px;padding-bottom:4px}
+.prow b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .ok{color:var(--up)} .prow .no{color:var(--dn);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .prow .na{color:var(--dim)}
+.thr{display:grid;grid-template-columns:1fr;gap:1px;background:var(--line);border:1px solid var(--line)}
+@media (min-width:620px){.thr{grid-template-columns:1fr 1fr}}
+.thr > div{background:#05080C;padding:12px 14px;font-size:11.5px;line-height:1.75}
+.thr .c{color:var(--dim)} .thr .k{color:#9CC7DA} .thr .v{color:var(--amb);float:right;font-variant-numeric:tabular-nums}
+.vcard{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-top:1px solid var(--line)}
+.vcard:first-child{border-top:0}
+.vcard .t1{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.vcard .t1 b{font:700 16px/1 var(--f-display);letter-spacing:.04em}
+.vcard p{margin:0;font-size:11px;color:var(--muted)} .vcard p em{font-style:normal;color:var(--dim);margin-right:6px}
 @media (max-width:460px){.tabs button{padding:11px 2px;font-size:10px;letter-spacing:.03em;gap:3px;min-width:0}.tabs .badge{padding:1px 3px}}
 @media (max-width:420px){.status .txt{display:none}.brand{font-size:18px}.wbig b{font-size:26px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -311,8 +365,8 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
   <!-- AGENT -->
   <section id="agentView" style="display:flex;flex-direction:column;gap:16px" hidden>
     <div class="panel">
-      <div class="ph"><h2>Agent</h2><span class="tagline" id="agentAge">runs on its own · 24/7</span></div>
-      <p class="hint" style="margin:0">Watches wallets every 15 min, scans fresh runners every 2 hours, hunts cabals, and writes a daily recap. It pings Telegram; this is its log.</p>
+      <div class="ph"><h2>The desk</h2><span class="tagline" id="agentAge">runs on its own · 24/7</span></div>
+      <p class="hint" style="margin:0">Six agents work every coin in order: Scan finds it, Social reads its X, Vet reads the chain, Hunt looks for cabals, Watch tracks wallets, and Chief gives the verdict. Nobody takes a position.</p>
       <div class="kpis k4" id="agentKpis"></div>
       <div class="row" style="align-items:center">
         <button class="sm" id="agentRefresh">Refresh</button>
@@ -321,8 +375,13 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
         <span class="hint" id="agentMsg"></span>
       </div>
     </div>
+    <div class="floor" id="floor" aria-label="The desk floor, replaying what each agent did last"></div>
+    <div class="crew" id="crew"></div>
+    <div id="pipeline"></div>
+    <div id="verdicts"></div>
     <div id="agentRecap"></div>
     <div id="agentGroups"></div>
+    <div id="thresholds"></div>
     <div id="agentFeed"></div>
   </section>
 </main>
@@ -1152,7 +1211,7 @@ async function loadAgent(){
   renderAgent();
 }
 const VERDICT = {cabal: ['dev','Cabal'], smart_money: ['smart','Smart money'], bot_farm: ['snipe','Bot farm'], noise: ['warn','Noise']};
-const AICON = {buy: '👀', overlap: '🔥', cluster: '🕵️', coin: '🔎', recap: '📋', watch: '➕'};
+const AICON = {buy: '👀', overlap: '🔥', cluster: '🕵️', coin: '🔎', recap: '📋', watch: '➕', verdict: '🧑‍⚖️'};
 const agoMs = ms => ms ? ago(ms / 1000) : 'never';
 const kpi = (k, v) => `<div class="kpi"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>`;
 function groupCard(c){
@@ -1168,6 +1227,7 @@ function groupCard(c){
 }
 function renderAgent(){
   const kp = $('agentKpis'), rc = $('agentRecap'), gr = $('agentGroups'), fd = $('agentFeed');
+  renderDesk();
   if(!agent){
     kp.innerHTML = ''; gr.innerHTML = ''; fd.innerHTML = '';
     rc.innerHTML = `<div class="empty"><b>${agentErr === 'none' ? 'Agent not started yet' : agentErr ? 'Agent data unavailable' : 'Loading'}</b><span>${agentErr === 'none' ? 'Once the GitHub Action runs, its scans, wallet groups and recaps show up here.' : agentErr ? 'Could not reach the agent’s data. Try Refresh in a minute.' : ''}</span></div>`;
@@ -1187,6 +1247,101 @@ function renderAgent(){
       ${a.mint ? `<div class="acts"><a href="https://dexscreener.com/solana/${esc(a.mint)}" target="_blank" rel="noopener">Chart</a><button data-copy="${esc(a.mint)}">Copy CA</button></div>` : ''}
     </div>`).join('')}</div>` : `<div class="empty"><b>Quiet so far</b><span>Buys, overlaps, scans and cabal finds land here.</span></div>`}</div>`;
   bindActs(gr); bindActs(fd);
+}
+/* ---------- the desk: six agents on a floor, replaying what they did last ---------- */
+const CREW = {
+  scan:   {name: 'Scan',   c: '#3FD8FF', shape: 'circle', x: 17, y: 64, desk: 'the tape'},
+  social: {name: 'Social', c: '#F2677A', shape: 'squircle', x: 50, y: 64, desk: 'x accounts'},
+  vet:    {name: 'Vet',    c: '#FFB547', shape: 'pill', x: 83, y: 64, desk: 'the chain'},
+  hunt:   {name: 'Hunt',   c: '#B592FF', shape: 'tri', x: 17, y: 89, desk: 'cabal board'},
+  chief:  {name: 'Chief',  c: '#E6EEF5', shape: 'chief', x: 50, y: 89, desk: 'verdicts'},
+  watch:  {name: 'Watch',  c: '#3DDC97', shape: 'hex', x: 83, y: 89, desk: 'whale radar'},
+};
+const SHAPES = {
+  circle: '<circle cx="16" cy="17" r="12"/>', squircle: '<rect x="4" y="5" width="24" height="23" rx="8"/>',
+  pill: '<rect x="3" y="8" width="26" height="19" rx="9.5"/>', tri: '<path d="M16 4 28.6 26.6Q29.6 29 27 29H5Q2.4 29 3.4 26.6Z"/>',
+  hex: '<path d="M16 3l11.3 6.5v13L16 29 4.7 22.5v-13z"/>', chief: '<circle cx="16" cy="17" r="12"/>',
+};
+function blob(k){
+  const a = CREW[k], eyeY = a.shape === 'tri' ? 20 : 17;
+  const headset = a.shape === 'chief' ? '<path d="M5.5 15a10.5 10.5 0 0 1 21 0" fill="none" stroke="#4C5D6E" stroke-width="2.4"/><rect x="2.5" y="13.5" width="5" height="8" rx="2" fill="#4C5D6E"/><rect x="24.5" y="13.5" width="5" height="8" rx="2" fill="#4C5D6E"/>' : '';
+  return `<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="${a.c}">${SHAPES[a.shape]}</g>${headset}<ellipse cx="12.5" cy="${eyeY}" rx="2" ry="3" fill="#071018"/><ellipse cx="19.5" cy="${eyeY}" rx="2" ry="3" fill="#071018"/></svg>`;
+}
+const VTONE = v => v === 'CLEAN' ? 'good' : v === 'HEAVY BAGS' || v === 'BOTTED' ? 'mid' : 'bad';
+const usdS = v => v ? usd(v) : '—';
+let floorTimer = null, floorHome = null;
+function renderDesk(){
+  const d = agent?.desk;
+  const fl = $('floor'), cr = $('crew'), pp = $('pipeline'), vv = $('verdicts'), th = $('thresholds');
+  clearInterval(floorTimer); clearTimeout(floorHome);
+  if(!d){ fl.hidden = cr.hidden = true; pp.innerHTML = vv.innerHTML = th.innerHTML = ''; return; }
+  fl.hidden = cr.hidden = false;
+  const verd = d.verdicts || [], v0 = verd[0];
+  const groups = (agent.analysis?.clusters || []).filter(c => ['cabal', 'smart_money'].includes(c.verdict)).length;
+  const clean = verd.filter(v => v.verdict === 'CLEAN').length;
+  const boardIdle = v0 ? `<b>$${esc(v0.symbol)}</b><div><span class="vd ${VTONE(v0.verdict)}">${esc(v0.verdict)}</span></div><small>${esc(usdS(v0.mcap))} · ${v0.wins}/${v0.read} early up</small>` : `<small>No coin on the board yet. The first scan puts one here.</small>`;
+  fl.innerHTML = `<div class="tape">${(agent.watch || []).length} WALLETS · ${(agent.coins || []).filter(c => !c.skipped).length} COINS · ${groups} GROUP${groups === 1 ? '' : 'S'} · ${clean}/${verd.length} CLEAN · ${(agent.credits?.used || 0).toLocaleString()} CR</div>
+    <div class="board" id="board">${boardIdle}</div>
+    ${Object.entries(CREW).map(([k, a]) => `<div class="desk" style="left:${a.x}%;top:${a.y + 5}%;--c:${a.c}"><div class="top"></div><span>${esc(a.desk)}</span></div>
+      <div class="bot" id="bot-${k}" style="left:${a.x}%;top:${a.y - 6}%" title="${esc(a.name)}">${blob(k)}</div>`).join('')}
+`;
+  const ag = d.agents || {};
+  const live = t => t && agent.updatedAt && t >= agent.updatedAt - 20 * 60e3;
+  cr.innerHTML = ['chief', 'scan', 'social', 'vet', 'hunt', 'watch'].map(k => {
+    const a = ag[k] || {}, c = CREW[k];
+    const val = typeof a.value === 'number' ? Math.max(0, Math.min(1, a.value)) : null;
+    return `<div class="agent" id="crew-${k}" style="--c:${c.c}">
+      <div class="hd">${blob(k)}<div><h3>${c.name}</h3><div class="role">${esc(a.role || '')}</div></div></div>
+      <div class="big">${esc((a.big || '—').replace(/_/g, ' '))}</div>
+      <div class="m"><span>${esc((a.metric || '').replace(/_/g, ' '))}</span><b>${val == null ? '—' : val.toFixed(2)}</b></div>
+      <div class="bar"><i style="width:${val == null ? 0 : val * 100}%"></i></div>
+      <div class="last">${esc(a.last || 'Nothing yet.')}</div>
+      <div class="stat ${live(a.t) ? 'live' : ''}">${live(a.t) ? '● on the move' : a.t ? 'idle · ' + esc(agoMs(a.t)) : 'idle'}</div>
+    </div>`;
+  }).join('');
+
+  // the filter, in the order coins go through it
+  const rows = d.pipeline?.rows || [];
+  const cell = (v, kind) => v == null ? '<span class="na">—</span>' : v === 'PASS' ? '<span class="ok">pass</span>'
+    : kind === 'chain' && !['SCANNED', 'BUDGET'].includes(v) ? `<span class="vd ${VTONE(v)}">${esc(v)}</span>` : `<span class="${kind === 'chain' ? 'na' : 'no'}">${esc(String(v).replace(/_/g, ' ').toLowerCase())}</span>`;
+  pp.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>The filter</h2><span class="tagline">${d.pipeline ? `${d.pipeline.seen} coin${d.pipeline.seen === 1 ? '' : 's'} seen · ${esc(agoMs(d.pipeline.t))}` : 'waiting for a scan'}</span></div>
+    <div class="pipe"><div class="order"><span>free kill</span><em>→</em><span>social kill</span><em>→</em><span>chain kill</span><em>→</em><span>verdict</span><p class="hint" style="margin:0;flex-basis:100%">Cheapest checks first. Credits only go on survivors.</p></div>
+    ${rows.length ? `<div class="prow h"><span>coin</span><span>free</span><span>social</span><span>chain</span></div>` + rows.map(r => `<div class="prow"><b>$${esc(r.symbol)}</b>${cell(r.free)}${cell(r.social)}${cell(r.chain, 'chain')}</div>`).join('') : '<div class="prow"><span class="na">The next scan fills this in.</span></div>'}</div></div>`;
+
+  vv.innerHTML = verd.length ? `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Chief's verdicts</h2><span class="tagline">${clean} clean of ${verd.length}</span></div><div class="coin">${verd.slice(0, 10).map(v => `<div class="vcard">
+      <div class="t1"><b>$${esc(v.symbol)}</b><span class="vd ${VTONE(v.verdict)}">${esc(v.verdict)}</span><span class="hint">${esc(usdS(v.mcap))} mcap · ${esc(agoMs(v.t))}</span></div>
+      <p><em>vet</em>${esc(v.vet || 'nothing flagged')}</p>
+      ${v.social ? `<p><em>social</em>${esc(v.social)}</p>` : ''}
+      ${v.reasons?.length ? `<p><em>why</em>${esc(v.reasons.join(', '))}</p>` : ''}
+      <p><em>early</em>${v.wins}/${v.read} first buyers in profit</p>
+      <div class="acts"><a href="https://dexscreener.com/solana/${esc(v.mint)}" target="_blank" rel="noopener">Chart</a><button data-copy="${esc(v.mint)}">Copy CA</button></div>
+    </div>`).join('')}</div></div>` : '';
+  bindActs(vv);
+
+  const t = d.thresholds;
+  th.innerHTML = t ? `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Thresholds</h2><span class="tagline">every number the desk believes</span></div><div class="thr">
+    <div><span class="c"># hard: market numbers, cost nothing</span><br>${Object.entries(t.hard).map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(Number(v).toLocaleString())}</span>`).join('<br>')}</div>
+    <div><span class="c"># soft: kill when the flag goes over</span><br>${Object.entries(t.soft).map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">max ${esc(v)}</span>`).join('<br>')}</div>
+  </div></div>` : '';
+
+  // replay the latest events on the floor
+  const evs = (d.events || []).filter(e => CREW[e.agent]).slice(0, 10).reverse();
+  if(!evs.length) return;
+  let i = 0;
+  const step = () => {
+    if($('agentView').hidden || document.hidden) return;
+    const e = evs[i++ % evs.length], a = CREW[e.agent], bot = $('bot-' + e.agent), board = $('board');
+    if(!bot || !board) return;
+    document.querySelectorAll('.agent.on').forEach(x => x.classList.remove('on'));
+    $('crew-' + e.agent)?.classList.add('on');
+    // walk up to the board, report, walk back
+    if(!RM){ bot.style.left = '50%'; bot.style.top = '45%'; }
+    bot.classList.remove('on'); void bot.offsetWidth; bot.classList.add('on');
+    setTimeout(() => { board.classList.add('talk'); board.innerHTML = `<small style="color:${a.c}">${a.name}</small><span class="say">${esc(e.text)}</span>`; }, RM ? 0 : 800);
+    floorHome = setTimeout(() => { board.classList.remove('talk'); board.innerHTML = boardIdle; bot.style.left = a.x + '%'; bot.style.top = (a.y - 6) + '%'; }, 3700);
+  };
+  step();
+  floorTimer = setInterval(step, 4600);
 }
 $('agentRefresh').onclick = loadAgent;
 $('agentImport').onclick = () => {
