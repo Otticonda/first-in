@@ -8,11 +8,11 @@
 import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {createSolana, isAddr, short, BudgetError} from './lib/solana.mjs';
+import {createSolana, isAddr, short, BudgetError, bondingCurveOf, PUMP} from './lib/solana.mjs';
 import {pairInfo, candidates} from './lib/dex.mjs';
 import {checkSocial} from './lib/social.mjs';
 import {vetChain} from './lib/vet.mjs';
-import {crawlPump, octoKill, octoScore} from './lib/octo.mjs';
+import {crawlPump, crawlGecko, crawlChain, readCurves, octoKill, octoScore} from './lib/octo.mjs';
 import {DEFAULT_THRESHOLDS, freeKill, priority, socialKill, chiefVerdict} from './lib/desk.mjs';
 import {analyze, matchPrevious, round} from './lib/cabal.mjs';
 import {judgeClusters, writeRecap} from './lib/brain.mjs';
@@ -349,10 +349,40 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   /* OCTO: reads pump.fun's live tape, keeps the curve coins worth a closer look */
   async function octoJob(){
     const oc = cfg.desk.octo;
-    const {coins, reqs, ok, error} = await crawlPump({fetchImpl, pages: oc.pages});
     const o = state.octo;
-    o.at = now; o.reqs += reqs; o.ok = !!ok; o.error = error;
-    if(!ok){ deskEvent('octo', error || 'could not reach pump.fun'); note('Octo: ' + (error || 'pump.fun unreachable')); return []; }
+    // route 1: pump.fun's own feed. It blocks some servers, so there are two more ways in.
+    let res = await crawlPump({fetchImpl, pages: oc.pages}), route = 'pump.fun';
+    const errors = [];
+    if(!res.ok || !res.coins.length){
+      errors.push(res.error || 'pump.fun returned nothing');
+      const g = await crawlGecko({fetchImpl});
+      o.reqs += g.reqs;
+      if(g.ok && g.coins.length){ res = g; route = 'GeckoTerminal'; }
+      else {
+        errors.push(g.error || 'GeckoTerminal returned nothing');
+        // route 3 reads pump.fun's program through Helius; it costs credits, so at most once an hour
+        if(now - (o.chainAt || 0) > 55 * 60e3){ o.chainAt = now; try { res = await crawlChain(sol.rpc, {PUMP}); route = 'chain'; } catch(e){ errors.push('chain read failed: ' + e.message); } }
+      }
+    }
+    o.at = now; o.reqs += res.reqs || 0; o.route = route;
+    o.ok = !!(res.ok && res.coins.length); o.error = o.ok ? '' : errors.join(' · ');
+    if(!o.ok){ deskEvent('octo', 'could not reach pump.fun this time, trying again next wake-up'); note('Octo: ' + o.error); return []; }
+    let coins = res.coins;
+    if(route !== 'pump.fun'){
+      if(!sol.solUsd) await sol.dexPrices([]);
+      coins = await readCurves(coins, sol.rpc, {bondingCurveOf, solUsd: sol.solUsd});
+      // names and socials from DexScreener, which lists curve coins too
+      const info = await pairInfo(coins.map(c => c.mint), fetchImpl);
+      for(const c of coins){ const i = info[c.mint]; if(!i) continue;
+        c.symbol = c.symbol || i.symbol; c.name = c.name || i.name; c.socials = i.socials.length ? i.socials : c.socials; c.websites = i.websites.length ? i.websites : c.websites;
+        c.createdAt = c.createdAt || i.createdAt; c.mcap = c.mcap || i.mcap; }
+      const noName = coins.filter(c => !c.symbol).map(c => c.mint);
+      if(noName.length){ const m = await sol.names(noName.slice(0, 100)); for(const c of coins) if(!c.symbol) c.symbol = m[c.mint]?.symbol || short(c.mint); }
+    }
+    // remember each coin's high so "holding near its high" works on every route
+    o.highs = o.highs || {};
+    for(const c of coins){ const h = Math.max(o.highs[c.mint]?.v || 0, c.ath || 0, c.mcap || 0); o.highs[c.mint] = {v: h, t: now}; c.ath = h; }
+    for(const [m, h] of Object.entries(o.highs)) if(now - h.t > DAY) delete o.highs[m];
     for(const c of coins) if(c.creator){ const list = new Set(o.creators[c.creator] || []); list.add(c.mint); o.creators[c.creator] = [...list].slice(-20); }
     const done = new Set(state.coins.map(c => c.mint));
     let inked = 0;
@@ -370,7 +400,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
     o.grabbed += fresh.length;
     o.grabs = grabs.slice(0, 10);
     o.lastRun = {touched: coins.length, grabbed: grabs.length, inked};
-    deskEvent('octo', grabs.length ? `touched ${coins.length} coins on pump.fun, grabbed ${grabs.slice(0, 4).map(g => '$' + g.symbol).join(' ')}` : `touched ${coins.length} coins on pump.fun, nothing worth grabbing`);
+    deskEvent('octo', grabs.length ? `touched ${coins.length} coins on pump.fun (via ${route}), grabbed ${grabs.slice(0, 4).map(g => '$' + g.symbol).join(' ')}` : `touched ${coins.length} coins on pump.fun, nothing worth grabbing`);
     note(`Octo: ${coins.length} live coins, ${grabs.length} grabbed, ${inked} inked.`);
     // ping the strongest new grabs, once each
     for(const [m, t] of Object.entries(o.pinged)) if(now - t > 2 * DAY) delete o.pinged[m];

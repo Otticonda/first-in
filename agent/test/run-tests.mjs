@@ -23,6 +23,9 @@ const rand = () => b58encode(globalThis.crypto.getRandomValues(new Uint8Array(32
 let sigN = 0; const newSig = () => 'sig' + (++sigN).toString().padStart(6, '0') + 'x'.repeat(40);
 
 /* ---------- fake chain ---------- */
+let pumpBlocked = false, geckoBlocked = false, geckoFeed = [];
+const PUMP_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+const curveData = new Map(); // bonding curve -> {vTok, vSol, realSol}
 const sigsByAddr = new Map(), txs = new Map(), accounts = new Map(), tokAcct = new Map();
 const acctOwner = new Map();
 const acctOf = (o, m) => { const k = o + m; if(!tokAcct.has(k)){ const a = rand(); tokAcct.set(k, a); acctOwner.set(a, {owner: o, mint: m}); } return tokAcct.get(k); };
@@ -75,6 +78,11 @@ const tiny = await makeCoin('TINY', [], Array.from({length: 3}, rand), 3600 * 3)
 const listed = [...coins, delta, tiny];
 // OCTA lives only on pump.fun's curve (not on DexScreener): Octo has to find it
 const octa = await makeCoin('OCTA', [], Array.from({length: 8}, rand), 3600); Object.assign(octa, {symbol: 'OCTA', handle: 'octacoin'});
+// OCTB is only reachable through the backup routes
+const octb = await makeCoin('OCTB', [], Array.from({length: 8}, rand), 1800); Object.assign(octb, {symbol: 'OCTB', handle: 'octbcoin'});
+curveData.set(octb.bc, {vTok: 600e12, vSol: 66e9, realSol: 40e9});
+Object.assign(octb, {vol: 90000, liqUsd: 0});
+const curveOnly = [octb];  // DexScreener knows it (socials, age) but isn't promoting it
 const pumpFeed = [
   {mint: octa.mint, symbol: 'OCTA', name: 'Octa', usd_market_cap: 30000, ath_market_cap: 35000, created_timestamp: Date.now() - 3600e3, real_sol_reserves: 51e9, reply_count: 40, twitter: 'https://x.com/octacoin', website: 'https://octa.fun', creator: rand(), complete: false},
   {mint: rand(), symbol: 'SPAM', name: 'Spam', usd_market_cap: 4000, ath_market_cap: 9000, created_timestamp: Date.now() - 600e3, real_sol_reserves: 2e9, reply_count: 0, creator: rand(), complete: false},
@@ -82,6 +90,7 @@ const pumpFeed = [
 
 /* ---------- fake services ---------- */
 const PAGE_CAP = 4;
+
 const sent = [], claudeCalls = [];
 let tgUpdates = [];
 const json = (o, status = 200) => ({ok: status < 400, status, json: async () => o});
@@ -89,6 +98,9 @@ async function fakeFetch(url, opts = {}){
   url = String(url);
   if(url.startsWith('https://mainnet.helius-rpc.com')){
     const {method, params} = JSON.parse(opts.body);
+    if(method === 'getSignaturesForAddress' && params[0] === PUMP_PROGRAM){
+      return json({result: (sigsByAddr.get(octb.mint) || []).slice().reverse()});
+    }
     if(method === 'getSignaturesForAddress'){
       const [addr, o = {}] = params;
       let list = (sigsByAddr.get(addr) || []).slice().sort((a, b) => b.slot - a.slot || (a.signature < b.signature ? 1 : -1));
@@ -110,6 +122,11 @@ async function fakeFetch(url, opts = {}){
       const list = [...holdings].filter(([k, v]) => k.endsWith('|' + mint) && v > 0).map(([k, v]) => ({address: acctOf(k.split('|')[0], mint), uiAmount: v}));
       return json({result: {value: list.sort((a, b) => b.uiAmount - a.uiAmount).slice(0, 20)}});
     }
+    if(method === 'getMultipleAccounts' && params[1]?.encoding === 'base64') return json({result: {value: params[0].map(a => {
+      const c = curveData.get(a); if(!c) return null;
+      const u = Buffer.alloc(81); u.writeBigUInt64LE(BigInt(c.vTok), 8); u.writeBigUInt64LE(BigInt(c.vSol), 16); u.writeBigUInt64LE(BigInt(c.realSol), 32); u[48] = 0;
+      return {data: [u.toString('base64'), 'base64']};
+    })}});
     if(method === 'getMultipleAccounts') return json({result: {value: params[0].map(a => ({data: {parsed: {info: {owner: acctOwner.get(a)?.owner}}}}))}});
     if(method === 'getAssetBatch') return json({result: params.ids.map(id => ({id, content: {metadata: {symbol: 'X', name: 'X'}}}))});
     return json({error: {message: 'unknown method ' + method}});
@@ -117,7 +134,7 @@ async function fakeFetch(url, opts = {}){
   if(url.includes('api.dexscreener.com')){
     if(url.includes('token-boosts') || url.includes('token-profiles')) return json(listed.map(c => ({chainId: 'solana', tokenAddress: c.mint})));
     const mints = url.split('/').pop().split(',');
-    const pairs = listed.filter(c => mints.includes(c.mint)).map(c => ({chainId: 'solana', dexId: 'pumpswap', baseToken: {address: c.mint, symbol: c.sym, name: c.sym},
+    const pairs = [...listed, ...curveOnly].filter(c => mints.includes(c.mint)).map(c => ({chainId: 'solana', dexId: 'pumpswap', baseToken: {address: c.mint, symbol: c.sym, name: c.sym},
       quoteToken: {address: 'So11111111111111111111111111111111111111112', symbol: 'SOL'}, priceUsd: '0.0005', priceNative: '0.0000025',
       marketCap: 500000, liquidity: {usd: c.liqUsd}, volume: {h24: c.vol}, priceChange: {h24: 120}, txns: {h24: {buys: 900, sells: 400}}, pairCreatedAt: c.createdAt,
       info: {socials: [{type: 'twitter', url: `https://x.com/${c.handle}`}], websites: []}}));
@@ -134,7 +151,12 @@ async function fakeFetch(url, opts = {}){
     }
     return json({content: [{type: 'tool_use', name: tool, input: {headline: 'Cabal ran ALPHA, BETA and GAMMA', body: 'Test recap body.'}}], usage: {}});
   }
+  if(url.startsWith('https://api.geckoterminal.com/')){
+    if(geckoBlocked) return json({}, 429);
+    return json({data: url.includes('page=1') ? geckoFeed : []});
+  }
   if(url.startsWith('https://frontend-api-v3.pump.fun/coins')){
+    if(pumpBlocked) return json({}, 403);
     assert.equal(opts.headers?.origin, 'https://pump.fun');
     return json(url.includes('offset=0&') ? pumpFeed : []);
   }
@@ -251,6 +273,22 @@ assert.match(s.recaps[0].body, /buys from watched wallets/);
 // 6. state stays small enough for a quick page load
 const size = (await readFile(statePath)).length;
 assert.ok(size < 400000, 'state is ' + size + ' bytes');
+
+// 7. pump.fun blocks us: Octo comes in through GeckoTerminal, reads the curve from chain, still grabs
+pumpBlocked = true;
+geckoFeed = [{id: 'solana_x', attributes: {name: 'OCTB / SOL', market_cap_usd: '41000', pool_created_at: new Date(Date.now() - 1800e3).toISOString(), transactions: {h1: {buyers: 120}}, volume_usd: {h24: '90000'}}, relationships: {base_token: {data: {id: 'solana_' + octb.mint}}}}];
+s = await go('watch');
+assert.equal(s.octo.route, 'GeckoTerminal', s.octo.error);
+const gb = s.octo.grabs.find(g => g.symbol === 'OCTB');
+assert.ok(gb && Math.abs(gb.progress - 40 / 85) < 0.01, 'curve progress read from chain: ' + JSON.stringify(s.octo.grabs));
+// 8. GeckoTerminal is down too: Octo reads pump.fun's program activity on chain
+geckoBlocked = true;
+s = await go('watch');
+assert.equal(s.octo.route, 'chain', s.octo.error);
+assert.ok(s.octo.grabs.some(g => g.mint === octb.mint), 'chain route finds the live coin: ' + JSON.stringify(s.octo));
+// and the hourly limit on the paid route holds
+s = await go('watch');
+assert.equal(s.octo.ok, false); assert.match(s.octo.error, /403/);
 
 if(process.env.STATE_OUT) await writeFile(process.env.STATE_OUT, await readFile(statePath));
 console.log(`All agent tests passed · state ${Math.round(size / 1024)} KB · ${claudeCalls.length} Claude calls · ${sent.length} Telegram messages in last run`);
