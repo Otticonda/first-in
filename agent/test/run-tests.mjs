@@ -305,5 +305,18 @@ assert.ok(s.octo.grabs.some(g => g.mint === octb.mint), 'chain route finds the l
 s = await go('watch');
 assert.equal(s.octo.ok, false); assert.match(s.octo.error, /403/);
 
+// 9. the shift loop: 'auto' only runs what's due
+{
+  const before = JSON.parse(await readFile(statePath, 'utf8'));
+  s = await go('auto');
+  assert.equal(s.runs.scan, before.runs.scan, 'deep scan not due yet');
+  const st = JSON.parse(await readFile(statePath, 'utf8'));
+  st.runs.scan = Date.now() - 4 * 3600e3; st.runs.sweep = Date.now() - 20 * 60e3; st.runs.watch = Date.now() - 20 * 60e3;
+  await writeFile(statePath, JSON.stringify(st));
+  s = await go('auto');
+  assert.ok(s.runs.scan > Date.now() - 60e3, 'deep scan runs once 3 hours have passed');
+  assert.ok(s.runs.sweep > Date.now() - 60e3 && s.runs.watch > Date.now() - 60e3, 'sweep and wallet check run when due');
+}
+
 if(process.env.STATE_OUT) await writeFile(process.env.STATE_OUT, await readFile(statePath));
 console.log(`All agent tests passed · state ${Math.round(size / 1024)} KB · ${claudeCalls.length} Claude calls · ${sent.length} Telegram messages in last run`);

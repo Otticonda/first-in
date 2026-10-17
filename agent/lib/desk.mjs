@@ -3,7 +3,7 @@
 
 export const DEFAULT_THRESHOLDS = {
   hard: {min_age_minutes: 15, max_age_hours: 72, min_liquidity_usd: 15000, min_volume_h24: 40000, min_mcap_usd: 250000, min_trades_h24: 150},
-  sweep: {enabled: true, maxCoins: 15, creditBudget: 80, pick_score: 0.6, maxPicks: 2},
+  sweep: {enabled: true, everyMinutes: 10, maxCoins: 15, creditBudget: 60, pick_score: 0.6, maxPicks: 2},
   octo: {enabled: true, pages: 3, min_age_minutes: 5, max_age_hours: 24, min_curve_progress: 0.2, min_mcap_vs_ath: 0.5, min_mcap_usd: 8000, min_score: 0.5, alert_score: 0.72, alerts_per_run: 2},
   soft: {recycled_account: 0.7, no_socials: 0.7, ghost_account: 0.9, dev_still_loaded: 0.6, top10_concentration: 0.7, bundled_launch: 0.6, sniped_launch: 0.8, cabal_in_early: 0.5, early_bags_loaded: 0.9},
 };

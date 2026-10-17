@@ -2,11 +2,15 @@
 
 A worker that runs First In on its own, 24/7, on GitHub Actions (free for public repos).
 
-| Job | When | What it does |
+The agent works in shifts: one starts every hour on GitHub Actions and stays on for about 55 minutes, working in a loop every 5 minutes. What runs on each pass is decided from its memory:
+
+| Job | How often | What it does |
 |---|---|---|
-| watch | every 15 min | Octo reads pump.fun's live coins. The **sweep** gives every live runner (Octo's grabs + DexScreener) a quick pass: free kill → X account → top-10 holders → verdict → score, and ranks them on the radar. The best clean ones become **Chief's picks** with a written thesis on Telegram. Also checks watched wallets and reads your Telegram commands. |
-| scan | every 3 hours | **Deep scan** of the radar's best coins: first 30 buyers, dev bag, snipers, bundles, cabal wallets. Sharpens each pick's thesis, or withdraws the pick if the deep scan finds a problem. Then hunts for wallet groups that keep showing up early together. |
-| recap | daily, 08:43 Lagos | Claude writes a recap of the last 24h and sends it. |
+| Telegram + Octo | every 5 min | Reads your commands. Octo reads pump.fun's live coins and pings strong curve coins. |
+| Wallets | every 10 min | Checks watched wallets for new buys, flags when 2+ watched wallets buy the same coin. |
+| Sweep | every 10 min | Every live runner (Octo's grabs + DexScreener) gets a quick pass: free kill → X account → top-10 holders → verdict → score, ranked on the radar. The best clean ones become **Chief's picks** with a written thesis on Telegram. |
+| Deep scan | every 3 hours | First 30 buyers of the radar's best coins: dev bag, snipers, bundles, cabal wallets. Sharpens each pick's thesis, or withdraws the pick if it finds a problem. Then the cabal hunt. |
+| Recap | daily, 08:43 Lagos | A recap of the last 24 hours. |
 
 Its memory is one JSON file on the `agent-data` branch. The site's **Agent** tab reads it.
 
@@ -20,7 +24,7 @@ Its memory is one JSON file on the `agent-data` branch. The site's **Agent** tab
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
    - `ANTHROPIC_API_KEY`
-5. **Actions tab → First In agent → Run workflow** (task `all`) for a first run. After that it runs by itself.
+5. **Actions tab → First In agent → Run workflow** (task `all`) for a first run. After that it runs by itself. A manual run waits until the current shift ends.
 
 ## The desk
 
@@ -40,7 +44,7 @@ Every threshold is in `agent/config.json` under `desk` and shows on the site's A
 
 `/watch <wallet> [label]` · `/unwatch <wallet or label>` · `/list` · `/scan <CA>` · `/octo` · `/status` · `/recap` · `/pause` · `/resume`
 
-Commands are picked up on the next wallet check, so replies take up to ~15 min (GitHub's scheduler can run late at busy times).
+Commands are picked up within about 5 minutes while a shift is on. GitHub can start a shift a little late at busy times.
 
 ## Tuning (`agent/config.json`)
 

@@ -1,22 +1,23 @@
 name: First In agent
 
+# One shift an hour. Each shift stays on for ~55 minutes and works in a loop every 5 minutes:
+# Telegram commands and Octo every pass, wallets and the runner sweep every 10 minutes,
+# the deep scan every 3 hours and the recap each morning, all decided from the agent's memory.
 on:
   schedule:
-    - cron: '*/15 * * * *'   # wallet watch + Telegram commands
-    - cron: '7 */3 * * *'    # discover + scan runners + cabal hunt
-    - cron: '43 7 * * *'     # daily recap (08:43 Lagos)
+    - cron: '5 * * * *'
   workflow_dispatch:
     inputs:
       task:
-        description: Which job to run
+        description: Run one job once, or 'auto' for a full shift
         type: choice
-        options: [watch, scan, recap, all]
+        options: [all, watch, scan, recap, auto]
         default: all
 
 permissions:
   contents: write
 
-# one run at a time, so two jobs never write the state at once
+# one run at a time, so two runs never write the memory at once
 concurrency:
   group: first-in-agent
   cancel-in-progress: false
@@ -24,24 +25,20 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 70
+    env:
+      HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+      STATE_FILE: state/agent.json
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Pick job
-        id: pick
-        run: |
-          case "${{ github.event.schedule }}" in
-            '7 */3 * * *') t=scan ;;
-            '43 7 * * *')  t=recap ;;
-            '')            t="${{ inputs.task || 'all' }}" ;;
-            *)             t=watch ;;
-          esac
-          echo "task=$t" >> "$GITHUB_OUTPUT"
 
       # The agent's memory lives on its own branch (agent-data) as one JSON file,
       # so the site can read it without the main branch filling up with commits.
@@ -52,27 +49,18 @@ jobs:
             git show FETCH_HEAD:agent.json > state/agent.json 2>/dev/null || true
           fi
 
-      - name: Run agent (${{ steps.pick.outputs.task }})
-        env:
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
-          STATE_FILE: state/agent.json
-        run: node agent/run.mjs ${{ steps.pick.outputs.task }}
-
-      - name: Save agent memory
-        if: always()
-        env:
-          GIT_AUTHOR_NAME: first-in-agent
-          GIT_AUTHOR_EMAIL: first-in-agent@users.noreply.github.com
-          GIT_COMMITTER_NAME: first-in-agent
-          GIT_COMMITTER_EMAIL: first-in-agent@users.noreply.github.com
+      - name: Work
         run: |
-          [ -s state/agent.json ] || exit 0
-          blob=$(git hash-object -w state/agent.json)
-          tree=$(printf '100644 blob %s\tagent.json\n' "$blob" | git mktree)
-          commit=$(git commit-tree "$tree" -m "agent memory $(date -u +%FT%TZ)")
-          # single-commit branch: always replaced, so history never grows
-          git push -f origin "$commit:refs/heads/agent-data"
+          task="${{ inputs.task || 'auto' }}"
+          if [ "$task" != "auto" ]; then
+            node agent/run.mjs "$task"
+            bash agent/save-state.sh
+            exit 0
+          fi
+          end=$((SECONDS + 54 * 60))
+          while true; do
+            node agent/run.mjs auto || echo "pass failed, carrying on"
+            bash agent/save-state.sh || echo "save failed, will retry next pass"
+            [ $((SECONDS + 300)) -lt $end ] || break
+            sleep 300
+          done

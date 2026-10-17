@@ -6,16 +6,18 @@
     "maxAlertsPerWallet": 3,
     "overlapMin": 2,
     "overlapWindowHours": 24,
-    "maxWallets": 60
+    "maxWallets": 60,
+    "everyMinutes": 10
   },
   "scan": {
     "coinsPerRun": 3,
     "buyersPerCoin": 30,
     "maxPagesPump": 300,
     "maxPagesOther": 300,
-    "creditBudgetPerRun": 2000,
+    "creditBudgetPerRun": 1500,
     "keepCoins": 50,
-    "rpcGapMs": 200
+    "rpcGapMs": 200,
+    "everyHours": 3
   },
   "desk": {
     "hard": {
@@ -52,9 +54,10 @@
     "sweep": {
       "enabled": true,
       "maxCoins": 15,
-      "creditBudget": 80,
+      "creditBudget": 60,
       "pick_score": 0.6,
-      "maxPicks": 2
+      "maxPicks": 2,
+      "everyMinutes": 10
     }
   },
   "cabal": {
@@ -77,5 +80,9 @@
   },
   "budget": {
     "monthlyCredits": 850000
-  }
+  },
+  "recapAtUtc": [
+    7,
+    43
+  ]
 }

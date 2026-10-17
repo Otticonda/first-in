@@ -128,7 +128,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
           replies.push(['<b>First In agent</b>',
             '/watch &lt;wallet&gt; [label] – watch a wallet', '/unwatch &lt;wallet or label&gt;', '/list – watched wallets',
             '/scan &lt;CA&gt; – scan a coin\'s first buyers', '/octo – what Octo grabbed on pump.fun', '/status – credits, last runs', '/recap – recap now',
-            '/pause · /resume – stop or restart scans and wallet checks', '', 'I read commands every ~15 min.'].join('\n'));
+            '/pause · /resume – stop or restart scans and wallet checks', '', 'I read commands every ~5 min while a shift is on.'].join('\n'));
         } else if(cmd === 'watch'){
           const [a, ...lbl] = args;
           if(!isAddr(a || '')) { replies.push('That isn\'t a Solana wallet address.'); continue; }
@@ -565,11 +565,18 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
     }
   };
   await run('commands', handleCommands);
-  const wants = t => task === t || task === 'all';
+  // 'auto' is the shift loop: each job runs when it's due, judged from when it last ran
+  const due = (k, ms) => !state.runs[k] || now - state.runs[k] >= ms - 60e3;
+  const recapDue = () => { const d = new Date(now); const at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), cfg.recapAtUtc?.[0] ?? 7, cfg.recapAtUtc?.[1] ?? 43); return now >= at && (state.runs.recap || 0) < at; };
+  const wants = t => task === t || task === 'all' || (task === 'auto' && (
+    t === 'watch' ? due('watch', cfg.watch.everyMinutes * 60e3) :
+    t === 'sweep' ? due('sweep', cfg.desk.sweep.everyMinutes * 60e3) :
+    t === 'scan' ? due('scan', cfg.scan.everyHours * 3600e3) :
+    t === 'recap' ? recapDue() : false));
   if(!state.paused){
     if(cfg.desk.octo.enabled) jobs.push(['octo', octoJob]);
     if(wants('watch')) jobs.push(['watch', watchWallets]);
-    if(cfg.desk.sweep.enabled) jobs.push(['sweep', sweepJob]);
+    if(cfg.desk.sweep.enabled && (task !== 'auto' || wants('sweep') || wants('scan'))) jobs.push(['sweep', sweepJob]);
     if(wants('scan')) jobs.push(['scan', async () => { const done = await scanJob(); await hunt(); judgeCoins(done); }]);
     else if(state.queue.length) jobs.push(['scan-queue', async () => { const done = await scanCoins(await queuedItems(state.queue.slice(0, 2))); if(done.length){ await hunt(); judgeCoins(done); } }]);
   }
@@ -603,7 +610,7 @@ export async function seed(statePath, cfgPath){
 
 if(import.meta.url === pathToFileURL(process.argv[1] || '').href){
   const task = process.argv[2] || 'watch';
-  if(!['watch', 'scan', 'recap', 'all'].includes(task)){ console.error('Usage: node agent/run.mjs watch|scan|recap|all'); process.exit(2); }
+  if(!['watch', 'scan', 'recap', 'all', 'auto'].includes(task)){ console.error('Usage: node agent/run.mjs watch|scan|recap|all|auto'); process.exit(2); }
   const statePath = resolve(process.env.STATE_FILE || 'state/agent.json');
   await seed(statePath);
   await runAgent({task, statePath});
