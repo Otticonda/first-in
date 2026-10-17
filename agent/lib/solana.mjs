@@ -86,21 +86,25 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
   if(!rpcUrl) throw new Error('No Helius RPC configured (set the HELIUS_API_KEY secret).');
   let credits = 0, creditLimit = Infinity, lastCall = 0, gate = Promise.resolve(), solUsd = 0;
   const txCache = new Map();
+  const stats = {calls: {}, errors: {}, retries: 0, nullTx: 0};
+  const bad = msg => { msg = String(msg).slice(0, 120); stats.errors[msg] = (stats.errors[msg] || 0) + 1; };
 
   function slot(){ const p = gate.then(async () => { const w = lastCall + gapMs - Date.now(); if(w>0) await sleep(w); lastCall = Date.now(); }); gate = p; return p; }
   async function rpc(method, params, cost=1){
     if(credits + cost > creditLimit) throw new BudgetError();
+    stats.calls[method] = (stats.calls[method] || 0) + 1;
     for(let attempt=0; attempt<6; attempt++){
       await slot();
       let res;
       try { res = await fetchImpl(rpcUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({jsonrpc:'2.0', id:1, method, params})}); }
-      catch(e){ if(attempt<5){ await sleep(600*2**attempt); continue; } throw new Error('Could not reach the RPC: ' + e.message); }
-      if(res.status===401 || res.status===403) throw new Error(`The RPC rejected the key (HTTP ${res.status}).`);
-      if(res.status===429 || res.status>=500){ await sleep(900*2**attempt); continue; }
-      let j; try { j = await res.json(); } catch { throw new Error('The RPC sent back something unreadable.'); }
+      catch(e){ bad(`${method}: network ${e.message}`); if(attempt<5){ await sleep(600*2**attempt); continue; } throw new Error('Could not reach the RPC: ' + e.message); }
+      if(res.status===401 || res.status===403){ bad(`${method}: HTTP ${res.status}`); throw new Error(`The RPC rejected the key (HTTP ${res.status}).`); }
+      if(res.status===429 || res.status>=500){ stats.retries++; bad(`${method}: HTTP ${res.status}`); await sleep(900*2**attempt); continue; }
+      let j; try { j = await res.json(); } catch { bad(`${method}: unreadable`); throw new Error('The RPC sent back something unreadable.'); }
       credits += cost;
       if(j.error){
-        if(j.error.code===-32429 || /rate|too many/i.test(j.error.message||'')){ await sleep(900*2**attempt); continue; }
+        bad(`${method}: ${j.error.code} ${j.error.message}`);
+        if(j.error.code===-32429 || /rate|too many/i.test(j.error.message||'')){ stats.retries++; await sleep(900*2**attempt); continue; }
         throw new Error(j.error.message || 'RPC error');
       }
       return j.result;
@@ -115,7 +119,7 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
   async function getTx(sig){
     if(txCache.has(sig)) return txCache.get(sig);
     const tx = await rpc('getTransaction', [sig, {encoding:'jsonParsed', maxSupportedTransactionVersion:0, commitment:'confirmed'}]);
-    if(tx){ if(txCache.size > 4000) txCache.clear(); txCache.set(sig, tx); }
+    if(tx){ if(txCache.size > 4000) txCache.clear(); txCache.set(sig, tx); } else stats.nullTx++;
     return tx;
   }
   async function names(mints){
@@ -165,15 +169,15 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
     } catch(e){ if(passThrough(e)) throw e; return null; }
   }
   async function oldestSigs(address, maxPages){
-    let before, prev = [], cur = [], pages = 0, total = 0;
+    let before, prev = [], cur = [], pages = 0, total = 0; const sizes = [];
     while(pages < maxPages){
       const opts = {limit:1000}; if(before) opts.before = before;
       const r = await rpc('getSignaturesForAddress', [address, opts]);
-      pages++; total += r.length; prev = cur; cur = r;
-      if(r.length < 1000) return {sigs: [...prev, ...cur].reverse(), total, complete: true};
+      pages++; total += r.length; prev = cur; cur = r; if(sizes.length < 8) sizes.push(r.length);
+      if(r.length < 1000) return {sigs: [...prev, ...cur].reverse(), total, complete: true, sizes};
       before = r[r.length-1].signature;
     }
-    return {sigs: [], total, complete: false};
+    return {sigs: [], total, complete: false, sizes};
   }
   async function positionFor(owner, acct, mint, c){
     const sigs = (await rpc('getSignaturesForAddress', [acct, {limit:100}])).filter(s => !s.err);
@@ -220,10 +224,12 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
     const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
     const viaPump = probe.length > 0;
     const addr = viaPump ? bc : mint;
-    const {sigs, total, complete} = await oldestSigs(addr, viaPump ? maxPagesPump : maxPagesOther);
-    if(!complete) return {mint, symbol: sym, name: meta?.name||'', skipped: `too many transactions (${total.toLocaleString()}+) to reach launch`, at: Date.now()};
+    const {sigs, total, complete, sizes} = await oldestSigs(addr, viaPump ? maxPagesPump : maxPagesOther);
+    const diag = {addr: viaPump ? 'curve' : 'mint', pageSizes: sizes, total, errSigs: sigs.filter(s => s.err).length, txRead: 0, txNull: 0, txNoBuy: 0};
+    if(!complete) return {mint, symbol: sym, name: meta?.name||'', skipped: `too many transactions (${total.toLocaleString()}+) to reach launch`, at: Date.now(), diag};
     const okSigs = sigs.filter(s => !s.err);
-    if(!okSigs.length) return {mint, symbol: sym, name: meta?.name||'', skipped: 'no successful transactions found', at: Date.now()};
+    diag.okSigs = okSigs.length;
+    if(!okSigs.length) return {mint, symbol: sym, name: meta?.name||'', skipped: 'no successful transactions found', at: Date.now(), diag};
     let supply = 0, decimals = 6;
     try { const s = (await rpc('getTokenSupply', [mint])).value; supply = Number(s.uiAmount) || 0; decimals = s.decimals ?? 6; } catch(e){ if(passThrough(e)) throw e; }
     const createSlot = okSigs[0].slot, createTime = okSigs[0].blockTime;
@@ -233,9 +239,11 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
       const batch = okSigs.slice(i, Math.min(i+6, cap));
       const txs = await pool(batch, 6, s => getTx(s.signature));
       txs.forEach((tx, j) => {
-        if(!tx) return;
+        if(!tx){ diag.txNull++; return; }
+        diag.txRead++;
         if(i===0 && j===0) dev = keysOf(tx)[0]?.pubkey || null;
         const bs = buysIn(tx, mint);
+        if(!bs.length){ diag.txNoBuy++; if(!diag.sampleNoBuy) diag.sampleNoBuy = batch[j].signature; }
         const ci = viaPump && bs.length === 1 ? curveIn(tx, keysOf(tx), bc) : 0;
         for(const b of bs){
           if(seen.has(b.owner) || b.owner === bc) continue;
@@ -255,11 +263,11 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
       try { b.pos = await positionFor(b.owner, b.acct, mint, ctx); } catch(e){ if(passThrough(e)) throw e; b.pos = null; }
     });
     log(`${sym}: ${list.length} early wallets read`);
-    return {mint, symbol: sym, name: meta?.name || '', viaPump, migrated, dev, createSlot, createTime, supply, decimals, priceSol, buyers: list, at: Date.now()};
+    return {mint, symbol: sym, name: meta?.name || '', viaPump, migrated, dev, createSlot, createTime, supply, decimals, priceSol, buyers: list, at: Date.now(), diag};
   }
 
   return {
-    rpc, pool, getTx, names, dexPrices, curvePrice, scanCoin, positionFor,
+    rpc, pool, getTx, names, stats, dexPrices, curvePrice, scanCoin, positionFor,
     walletBuys: (tx, w) => walletBuys(tx, w, solUsd),
     get credits(){ return credits; },
     get solUsd(){ return solUsd; },

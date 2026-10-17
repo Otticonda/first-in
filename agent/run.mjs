@@ -39,11 +39,11 @@ const gmgn = a => `<a href="https://gmgn.ai/sol/address/${a}">${esc(short(a))}</
 
 /* What the site and the cabal hunter need from a scan, rounded so the state file stays small. */
 function compactCoin(c){
-  if(c.skipped) return {mint: c.mint, symbol: c.symbol, name: c.name, skipped: c.skipped, at: c.at};
+  if(c.skipped) return {mint: c.mint, symbol: c.symbol, name: c.name, skipped: c.skipped, at: c.at, diag: c.diag};
   const r = v => round(v, 6);
   return {
     mint: c.mint, symbol: c.symbol, name: c.name, viaPump: c.viaPump, migrated: c.migrated, dev: c.dev,
-    createSlot: c.createSlot, createTime: c.createTime, supply: c.supply, decimals: c.decimals, priceSol: c.priceSol, at: c.at,
+    createSlot: c.createSlot, createTime: c.createTime, supply: c.supply, decimals: c.decimals, priceSol: c.priceSol, at: c.at, diag: c.diag,
     buyers: c.buyers.map(b => ({
       owner: b.owner, rank: b.rank, slotDelta: b.slotDelta, secs: b.secs, t: b.t, firstPrice: b.firstPrice,
       pos: b.pos ? {cost: r(b.pos.cost), bought: r(b.pos.bought), proceeds: r(b.pos.proceeds), sold: r(b.pos.sold), moved: r(b.pos.moved),
@@ -325,6 +325,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   if(replies.length) await tg.send(replies.join('\n\n'));
   if(outbox.length) await tg.send(outbox.join('\n\n'));
 
+  state.rpc = {at: now, task, ...sol.stats};
   state.credits.used += sol.credits; state.credits.today += sol.credits; state.credits.lastRun = sol.credits;
   state.updatedAt = Date.now();
   note(`Done · ${sol.credits.toLocaleString()} credits this run.`);
