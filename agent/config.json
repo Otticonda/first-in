@@ -7,7 +7,7 @@
     "overlapMin": 2,
     "overlapWindowHours": 24,
     "maxWallets": 60,
-    "everyMinutes": 10
+    "everyMinutes": 5
   },
   "scan": {
     "coinsPerRun": 3,
@@ -54,10 +54,11 @@
     "sweep": {
       "enabled": true,
       "maxCoins": 15,
-      "creditBudget": 60,
+      "creditBudget": 50,
       "pick_score": 0.6,
       "maxPicks": 2,
-      "everyMinutes": 10
+      "everyMinutes": 2,
+      "vetTtlMinutes": 15
     }
   },
   "cabal": {

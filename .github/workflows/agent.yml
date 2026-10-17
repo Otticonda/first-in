@@ -1,7 +1,7 @@
 name: First In agent
 
-# One shift an hour. Each shift stays on for ~55 minutes and works in a loop every 5 minutes:
-# Telegram commands and Octo every pass, wallets and the runner sweep every 10 minutes,
+# One shift an hour. Each shift stays on for ~55 minutes and works in a loop every 2 minutes:
+# Telegram commands, Octo and the runner sweep every pass, wallets every 5 minutes,
 # the deep scan every 3 hours and the recap each morning, all decided from the agent's memory.
 on:
   schedule:
@@ -61,6 +61,6 @@ jobs:
           while true; do
             node agent/run.mjs auto || echo "pass failed, carrying on"
             bash agent/save-state.sh || echo "save failed, will retry next pass"
-            [ $((SECONDS + 300)) -lt $end ] || break
-            sleep 300
+            [ $((SECONDS + 120)) -lt $end ] || break
+            sleep 120
           done

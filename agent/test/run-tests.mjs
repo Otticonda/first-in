@@ -91,6 +91,7 @@ const pumpFeed = [
 /* ---------- fake services ---------- */
 const PAGE_CAP = 4;
 
+let largestCalls = 0;
 const sent = [], claudeCalls = [];
 let tgUpdates = [];
 const json = (o, status = 200) => ({ok: status < 400, status, json: async () => o});
@@ -118,6 +119,7 @@ async function fakeFetch(url, opts = {}){
       return json({result: {value: amount ? [{account: {data: {parsed: {info: {tokenAmount: {uiAmount: amount}}}}}}] : []}});
     }
     if(method === 'getTokenLargestAccounts'){
+      largestCalls++;
       const mint = params[0];
       const list = [...holdings].filter(([k, v]) => k.endsWith('|' + mint) && v > 0).map(([k, v]) => ({address: acctOf(k.split('|')[0], mint), uiAmount: v}));
       return json({result: {value: list.sort((a, b) => b.uiAmount - a.uiAmount).slice(0, 20)}});
@@ -316,6 +318,17 @@ assert.equal(s.octo.ok, false); assert.match(s.octo.error, /403/);
   s = await go('auto');
   assert.ok(s.runs.scan > Date.now() - 60e3, 'deep scan runs once 3 hours have passed');
   assert.ok(s.runs.sweep > Date.now() - 60e3 && s.runs.watch > Date.now() - 60e3, 'sweep and wallet check run when due');
+}
+
+// 10. two-minute passes don't re-spend credits on coins already checked
+{
+  const st = JSON.parse(await readFile(statePath, 'utf8')); st.runs.sweep = 0; await writeFile(statePath, JSON.stringify(st));
+  await go('auto');
+  const after1 = largestCalls;
+  const st2 = JSON.parse(await readFile(statePath, 'utf8')); st2.runs.sweep = 0; await writeFile(statePath, JSON.stringify(st2));
+  s = await go('auto');
+  assert.equal(largestCalls, after1, 'holder checks are reused inside 15 minutes');
+  assert.ok(s.desk.radar.swept >= 1, 'the sweep still ranks every runner');
 }
 
 if(process.env.STATE_OUT) await writeFile(process.env.STATE_OUT, await readFile(statePath));

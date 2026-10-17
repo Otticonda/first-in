@@ -27,7 +27,7 @@ const freshState = () => ({
   runs: {}, watch: [], buys: [], overlaps: {}, coins: [], queue: [],
   analysis: {coinsAnalyzed: 0, bots: [], repeaters: [], clusters: []},
   judged: [], alerts: [], recaps: [], log: [],
-  desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null, radar: null, picks: [], socialCache: {}, killed: {}, pinged: {}},
+  desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null, radar: null, picks: [], socialCache: {}, vetCache: {}, killed: {}, pinged: {}},
   octo: {at: 0, reqs: 0, touched: 0, grabbed: 0, inked: 0, ok: true, error: '', grabs: [], pinged: {}, creators: {}},
   credits: {month: '', used: 0, day: '', today: 0, lastRun: 0},
 });
@@ -128,7 +128,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
           replies.push(['<b>First In agent</b>',
             '/watch &lt;wallet&gt; [label] – watch a wallet', '/unwatch &lt;wallet or label&gt;', '/list – watched wallets',
             '/scan &lt;CA&gt; – scan a coin\'s first buyers', '/octo – what Octo grabbed on pump.fun', '/status – credits, last runs', '/recap – recap now',
-            '/pause · /resume – stop or restart scans and wallet checks', '', 'I read commands every ~5 min while a shift is on.'].join('\n'));
+            '/pause · /resume – stop or restart scans and wallet checks', '', 'I read commands every ~2 min while a shift is on.'].join('\n'));
         } else if(cmd === 'watch'){
           const [a, ...lbl] = args;
           if(!isAddr(a || '')) { replies.push('That isn\'t a Solana wallet address.'); continue; }
@@ -443,7 +443,8 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
     const octoPipe = state.octo.grabs.filter(g => !exclude.has(g.mint) && !seen.some(c => c.mint === g.mint)).map(c => ({c, src: 'octo', free: {pass: true}}));
     const pipe = [...octoPipe, ...dexPipe];
     const alive = pipe.filter(p => p.free.pass).map(p => (p.mom = momentum(p.c), p)).sort((a, b) => b.mom.value - a.mom.value).slice(0, sw.maxCoins);
-    deskEvent('scan', `${pipe.length} runners on the tape, ${alive.length} survive the free kill`);
+    const tapeLine = `${pipe.length} runners on the tape, ${alive.length} survive the free kill`;
+    if(state.desk.events.find(e => e.agent === 'scan')?.text !== tapeLine) deskEvent('scan', tapeLine);
     sol.budget(Math.min(sw.creditBudget, Math.max(0, creditsLeft())));
     const radar = [];
     for(const p of alive){
@@ -451,8 +452,14 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
         p.social = await social(p.c);
         p.socialKill = socialKill(p.social, soft);
         if(!p.socialKill.pass) state.desk.killed[p.c.mint] = now;
-        const supply = p.c.mint.endsWith('pump') ? 1e9 : Number((await sol.rpc('getTokenSupply', [p.c.mint]))?.value?.uiAmount) || 0;
-        p.vet = await vetChain({mint: p.c.mint, supply}, sol.rpc);
+        // the holder check costs credits, so it's reused for a while; momentum (free) refreshes every pass
+        const vc = state.desk.vetCache[p.c.mint];
+        if(vc && now - vc.t < sw.vetTtlMinutes * 60e3) p.vet = vc.vet;
+        else {
+          const supply = p.c.mint.endsWith('pump') ? 1e9 : Number((await sol.rpc('getTokenSupply', [p.c.mint]))?.value?.uiAmount) || 0;
+          p.vet = await vetChain({mint: p.c.mint, supply}, sol.rpc);
+          state.desk.vetCache[p.c.mint] = {t: now, vet: p.vet};
+        }
         const deep = state.coins.find(c => c.mint === p.c.mint && c.desk?.verdict);
         const chief = deep ? {verdict: deep.desk.verdict, reasons: deep.desk.reasons} : chiefVerdict({social: p.social, vet: p.vet}, soft);
         p.verdict = chief.verdict;
@@ -486,9 +493,10 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
           (th.risks.length ? `\n\n<b>What could kill it</b>\n${th.risks.map(x => '• ' + esc(x)).join('\n')}` : '') +
           `\n\n<b>Wrong if</b>\n${th.wrong.map(x => '• ' + esc(x)).join('\n')}\n\n${r.src === 'octo' ? `<a href="https://pump.fun/coin/${r.mint}">pump.fun</a>` : chart(r.mint)} · <code>${r.mint}</code>\n<i>A reason to watch, not a buy. First In never takes a position.</i>`, {mint: r.mint});
       }
-      deskEvent('chief', `$${r.symbol} is my pick: ${pick.thesis.headline.replace(/^\$\S+:\s*/, '')}`);
+      if(!known) deskEvent('chief', `$${r.symbol} is my pick: ${pick.thesis.headline.replace(/^\$\S+:\s*/, '')}`);
     }
-    if(!fresh.length) deskEvent('chief', radar.length ? `${radar.length} runners swept, nothing clean and strong enough to pick` : 'no runners worth a look right now');
+    const quiet = radar.length ? `${radar.length} runners swept, nothing clean and strong enough to pick` : 'no runners worth a look right now';
+    if(!fresh.length && state.desk.events.find(e => e.agent === 'chief')?.text !== quiet) deskEvent('chief', quiet);
     // a live pick that has since been flagged gets withdrawn
     for(const pk of state.desk.picks){
       const r = radar.find(x => x.mint === pk.mint);
@@ -505,6 +513,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       chain: p.verdict || null,
     }))};
     for(const [m, t] of Object.entries(state.desk.killed)) if(now - t > 3 * DAY) delete state.desk.killed[m];
+    for(const [m, c] of Object.entries(state.desk.vetCache)) if(now - c.t > 2 * 3600e3) delete state.desk.vetCache[m];
     for(const [m, t] of Object.entries(state.desk.pinged)) if(now - t > 2 * DAY) delete state.desk.pinged[m];
     note(`Sweep: ${pipe.length} on the tape, ${radar.length} swept, ${fresh.length} pick${fresh.length === 1 ? '' : 's'}.`);
     return radar;

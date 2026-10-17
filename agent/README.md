@@ -2,13 +2,13 @@
 
 A worker that runs First In on its own, 24/7, on GitHub Actions (free for public repos).
 
-The agent works in shifts: one starts every hour on GitHub Actions and stays on for about 55 minutes, working in a loop every 5 minutes. What runs on each pass is decided from its memory:
+The agent works in shifts: one starts every hour on GitHub Actions and stays on for about 55 minutes, working in a loop every 2 minutes. What runs on each pass is decided from its memory:
 
 | Job | How often | What it does |
 |---|---|---|
-| Telegram + Octo | every 5 min | Reads your commands. Octo reads pump.fun's live coins and pings strong curve coins. |
-| Wallets | every 10 min | Checks watched wallets for new buys, flags when 2+ watched wallets buy the same coin. |
-| Sweep | every 10 min | Every live runner (Octo's grabs + DexScreener) gets a quick pass: free kill → X account → top-10 holders → verdict → score, ranked on the radar. The best clean ones become **Chief's picks** with a written thesis on Telegram. |
+| Telegram + Octo | every 2 min | Reads your commands. Octo reads pump.fun's live coins and pings strong curve coins. |
+| Wallets | every 5 min | Checks watched wallets for new buys, flags when 2+ watched wallets buy the same coin. |
+| Sweep | every 2 min | Every live runner (Octo's grabs + DexScreener) gets a quick pass: free kill → X account → top-10 holders → verdict → score, ranked on the radar. Momentum refreshes every pass for free; the holder check (Helius credits) is reused for 15 minutes, so credits only go to coins that just appeared. The best clean ones become **Chief's picks** with a written thesis on Telegram. |
 | Deep scan | every 3 hours | First 30 buyers of the radar's best coins: dev bag, snipers, bundles, cabal wallets. Sharpens each pick's thesis, or withdraws the pick if it finds a problem. Then the cabal hunt. |
 | Recap | daily, 08:43 Lagos | A recap of the last 24 hours. |
 
@@ -44,7 +44,7 @@ Every threshold is in `agent/config.json` under `desk` and shows on the site's A
 
 `/watch <wallet> [label]` · `/unwatch <wallet or label>` · `/list` · `/scan <CA>` · `/octo` · `/status` · `/recap` · `/pause` · `/resume`
 
-Commands are picked up within about 5 minutes while a shift is on. GitHub can start a shift a little late at busy times.
+Commands are picked up within about 2 minutes while a shift is on. GitHub can start a shift a little late at busy times.
 
 ## Tuning (`agent/config.json`)
 

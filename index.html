@@ -1415,7 +1415,7 @@ function renderDesk(){
       <span class="sbar" title="momentum ${r.momentum} · safety ${r.safety}">${Number(r.score).toFixed(2)}<i style="--w:${Math.round(r.score * 100)}%"></i></span>
       <span><span class="vd ${VTONE(r.verdict)}">${esc(r.verdict)}</span></span>
       <span class="mc">${esc(usdS(r.mcap))}</span></div>`).join('')}</div>
-    <p class="hint" style="margin:0">Score is half momentum (price, buy pressure, turnover or curve progress) and half safety (the worst flag from Social and Vet). The sweep runs every 10 minutes.</p></div>` : '';
+    <p class="hint" style="margin:0">Score is half momentum (price, buy pressure, turnover or curve progress) and half safety (the worst flag from Social and Vet). The sweep runs every 2 minutes.</p></div>` : '';
 
   // the filter, in the order coins go through it
   const rows = d.pipeline?.rows || [];
