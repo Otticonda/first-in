@@ -12,9 +12,10 @@
     "coinsPerRun": 2,
     "buyersPerCoin": 30,
     "maxPagesPump": 300,
-    "maxPagesOther": 150,
+    "maxPagesOther": 300,
     "creditBudgetPerRun": 1500,
-    "keepCoins": 50
+    "keepCoins": 50,
+    "rpcGapMs": 200
   },
   "desk": {
     "hard": {

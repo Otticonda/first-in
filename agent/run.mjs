@@ -89,7 +89,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
 
   const now = Date.now();
   const rpcUrl = env.HELIUS_RPC_URL || (env.HELIUS_API_KEY ? `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(env.HELIUS_API_KEY)}` : '');
-  const sol = createSolana({rpcUrl, fetchImpl, gapMs, log: m => note(m)});
+  const sol = createSolana({rpcUrl, fetchImpl, gapMs: gapMs ?? cfg.scan.rpcGapMs ?? 200, log: m => note(m)});
   const tg = createTelegram({token: env.TELEGRAM_BOT_TOKEN, chatId: env.TELEGRAM_CHAT_ID, fetchImpl, dryRun: env.DRY_RUN === '1'});
   const brain = {apiKey: env.ANTHROPIC_API_KEY, fetchImpl};
   const outbox = [];   // Telegram lines for this run
@@ -273,7 +273,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       const d = res.desk, v = d.vet, s = d.social;
       const n = res.buyers.filter(b => cabalWallets.has(b.owner)).length;
       if(n){ v.facts.cabalWallets = n; v.flags.cabal_in_early = Math.round(Math.min(1, n / 4) * 100) / 100; if(!/cabal wallets/.test(v.line)) v.line += ` · ${n} cabal wallets early`; }
-      const chief = chiefVerdict({social: s, vet: v}, soft);
+      const chief = chiefVerdict({social: s, vet: v, read: d.read}, soft);
       Object.assign(d, {verdict: chief.verdict, reasons: chief.reasons});
       const stored = state.coins.find(c => c.mint === res.mint); if(stored) stored.desk = d;
       const row = state.desk.pipeline?.rows?.find(r => r.mint === res.mint); if(row) row.chain = chief.verdict;

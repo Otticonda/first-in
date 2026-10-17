@@ -119,7 +119,7 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
   }
   async function getTx(sig){
     if(txCache.has(sig)) return txCache.get(sig);
-    const tx = await rpc('getTransaction', [sig, {encoding:'jsonParsed', maxSupportedTransactionVersion:0, commitment:'confirmed'}]);
+    const tx = await rpc('getTransaction', [sig, {encoding:'jsonParsed', maxSupportedTransactionVersion:255, commitment:'confirmed'}]);
     if(tx){ if(txCache.size > 4000) txCache.clear(); txCache.set(sig, tx); } else stats.nullTx++;
     return tx;
   }
@@ -179,7 +179,7 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
       pages++; if(sizes.length < 8) sizes.push(r.length);
       if(!r.length) return {sigs: buf.slice().reverse(), total, complete: true, sizes, pages};
       total += r.length;
-      buf = buf.length + r.length > 2000 ? [...buf, ...r].slice(-2000) : [...buf, ...r];
+      buf = buf.length + r.length > 5000 ? [...buf, ...r].slice(-5000) : [...buf, ...r];
       before = r[r.length-1].signature;
     }
     return {sigs: [], total, complete: false, sizes, pages};
@@ -230,21 +230,14 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
     return {cost, bought, proceeds, sold, moved, received, held, value, pnl: proceeds + value - cost,
       entryPrice, sellPrice, buys, sells, status, partial, priced: !!c.priceSol, lastSell};
   }
-  /* First N buyers of a coin and every one of their positions. Same output shape the site stores. */
-  async function scanCoin(mint, N, {meta, maxPagesPump = 600, maxPagesOther = 250} = {}){
-    const sym = meta?.symbol || short(mint);
-    const bc = await bondingCurveOf(mint);
-    const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
-    const viaPump = probe.length > 0;
-    const addr = viaPump ? bc : mint;
-    const {sigs, total, complete, sizes, pages} = await oldestSigs(addr, viaPump ? maxPagesPump : maxPagesOther);
-    const diag = {addr: viaPump ? 'curve' : 'mint', pageSizes: sizes, pages, total, errSigs: sigs.filter(s => s.err).length, txRead: 0, txNull: 0, txNoBuy: 0};
-    if(!complete) return {mint, symbol: sym, name: meta?.name||'', skipped: `too many transactions (${total.toLocaleString()}+) to reach launch`, at: Date.now(), diag};
+  /* Walk a history (bonding curve or mint) from launch and collect the first N distinct buyers. */
+  async function firstBuyers(mint, addr, bc, N, maxPages){
+    const {sigs, total, complete, sizes, pages} = await oldestSigs(addr, maxPages);
+    const diag = {addr: addr === bc ? 'curve' : 'mint', pageSizes: sizes, pages, total, errSigs: sigs.filter(s => s.err).length, txRead: 0, txNull: 0, txNoBuy: 0};
+    if(!complete) return {diag, skipped: `too many transactions (${total.toLocaleString()}+) to reach launch`};
     const okSigs = sigs.filter(s => !s.err);
     diag.okSigs = okSigs.length;
-    if(!okSigs.length) return {mint, symbol: sym, name: meta?.name||'', skipped: 'no successful transactions found', at: Date.now(), diag};
-    let supply = 0, decimals = 6;
-    try { const s = (await rpc('getTokenSupply', [mint])).value; supply = Number(s.uiAmount) || 0; decimals = s.decimals ?? 6; } catch(e){ if(passThrough(e)) throw e; }
+    if(!okSigs.length) return {diag, skipped: 'no successful transactions found'};
     const createSlot = okSigs[0].slot, createTime = okSigs[0].blockTime;
     const buyers = []; const seen = new Set(); let dev = null;
     const cap = Math.min(okSigs.length, N*5);
@@ -257,7 +250,7 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
         if(i===0 && j===0) dev = keysOf(tx)[0]?.pubkey || null;
         const bs = buysIn(tx, mint);
         if(!bs.length){ diag.txNoBuy++; if(!diag.sampleNoBuy) diag.sampleNoBuy = batch[j].signature; }
-        const ci = viaPump && bs.length === 1 ? curveIn(tx, keysOf(tx), bc) : 0;
+        const ci = bc && bs.length === 1 ? curveIn(tx, keysOf(tx), bc) : 0;
         for(const b of bs){
           if(seen.has(b.owner) || b.owner === bc) continue;
           seen.add(b.owner);
@@ -266,6 +259,27 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
         }
       });
     }
+    return {diag, buyers, dev, createSlot, createTime};
+  }
+
+  /* First N buyers of a coin and every one of their positions. Same output shape the site stores. */
+  async function scanCoin(mint, N, {meta, maxPagesPump = 600, maxPagesOther = 250} = {}){
+    const sym = meta?.symbol || short(mint);
+    const bc = await bondingCurveOf(mint);
+    const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
+    const viaPump = probe.length > 0;
+    let r = await firstBuyers(mint, viaPump ? bc : mint, viaPump ? bc : null, N, viaPump ? maxPagesPump : maxPagesOther);
+    // Some newer pump.fun coins barely touch the curve account; the mint's own history always has the trades.
+    if(viaPump && (r.skipped || r.buyers.length < N / 2)){
+      const m = await firstBuyers(mint, mint, bc, N, maxPagesOther);
+      if(!m.skipped && (r.skipped || m.buyers.length > r.buyers.length)){ m.diag.curveTried = {...r.diag}; r = m; }
+      else r.diag.mintTried = {...m.diag};
+    }
+    const diag = r.diag;
+    if(r.skipped) return {mint, symbol: sym, name: meta?.name||'', skipped: r.skipped, at: Date.now(), diag};
+    const {buyers, dev, createSlot, createTime} = r;
+    let supply = 0, decimals = 6;
+    try { const s = (await rpc('getTokenSupply', [mint])).value; supply = Number(s.uiAmount) || 0; decimals = s.decimals ?? 6; } catch(e){ if(passThrough(e)) throw e; }
     const list = buyers.slice(0, N);
     let priceSol = 0, migrated = !viaPump;
     if(viaPump){ const cp = await curvePrice(bc, decimals); if(cp && !cp.complete) priceSol = cp.priceSol; else migrated = true; }

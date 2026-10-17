@@ -36,7 +36,9 @@ const LABELS = {
 };
 
 /* Chief never takes a position: it only says what the coin is. */
-export function chiefVerdict({social, vet}, soft){
+export function chiefVerdict({social, vet, read = null}, soft){
+  // a verdict needs evidence: without the early buyers there's nothing to call it clean on
+  if(read != null && read < 5) return {verdict: 'NO DATA', reasons: [`only ${read} early buyers read`], tone: 'mid'};
   const kills = [];
   for(const src of [social, vet]) for(const [k, v] of Object.entries(src?.flags || {})) if(soft[k] != null && v > soft[k]) kills.push({flag: k, value: v});
   kills.sort((a, b) => (b.value - soft[b.flag]) - (a.value - soft[a.flag]));

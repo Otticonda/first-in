@@ -458,7 +458,7 @@ async function pool(items, conc, fn){
 }
 async function getTx(sig){
   if(txCache.has(sig)) return txCache.get(sig);
-  const tx = await rpc('getTransaction', [sig, {encoding:'jsonParsed', maxSupportedTransactionVersion:0, commitment:'confirmed'}]);
+  const tx = await rpc('getTransaction', [sig, {encoding:'jsonParsed', maxSupportedTransactionVersion:255, commitment:'confirmed'}]);
   if(tx){ if(txCache.size > 4000) txCache.clear(); txCache.set(sig, tx); }
   return tx;
 }
@@ -562,13 +562,16 @@ function walletBuys(tx, wallet){
 }
 
 /* ---------- launch history ---------- */
+/* Page back until the RPC returns nothing: a short page is not the end, the RPC can return fewer than asked. */
 async function oldestSigs(address, maxPages, onPage){
-  let before, prev = [], cur = [], pages = 0, total = 0;
+  let before, buf = [], pages = 0, total = 0;
   while(pages < maxPages){
     const opts = {limit:1000}; if(before) opts.before = before;
     const r = await rpc('getSignaturesForAddress', [address, opts]);
-    pages++; total += r.length; prev = cur; cur = r; onPage(total);
-    if(r.length < 1000) return {sigs: [...prev, ...cur].reverse(), total, complete: true};
+    pages++;
+    if(!r.length) return {sigs: buf.slice().reverse(), total, complete: true};
+    total += r.length; onPage(total);
+    buf = buf.length + r.length > 5000 ? [...buf, ...r].slice(-5000) : [...buf, ...r];
     before = r[r.length-1].signature;
   }
   return {sigs: [], total, complete: false};
@@ -576,7 +579,14 @@ async function oldestSigs(address, maxPages, onPage){
 
 /* ---------- one wallet's full trade history on one coin ---------- */
 async function positionFor(owner, acct, mint, c){
-  const sigs = (await rpc('getSignaturesForAddress', [acct, {limit:100}])).filter(s => !s.err);
+  const all = []; let before;
+  for(let p = 0; p < 6 && all.length < 100; p++){
+    const opts = {limit: 100 - all.length}; if(before) opts.before = before;
+    const r = await rpc('getSignaturesForAddress', [acct, opts]);
+    if(!r.length) break;
+    all.push(...r); before = r[r.length-1].signature;
+  }
+  const sigs = all.filter(s => !s.err);
   const txs = await pool(sigs, 6, s => getTx(s.signature));
   let cost = 0, bought = 0, curveCost = 0, curveTok = 0, proceeds = 0, sold = 0, moved = 0, received = 0, buys = 0, sells = 0, lastSell = 0;
   for(let k=0; k<txs.length; k++){
@@ -598,7 +608,7 @@ async function positionFor(owner, acct, mint, c){
       else moved += -tok;
     }
   }
-  const partial = sigs.length >= 100;
+  const partial = all.length >= 100;
   let held = Math.max(0, bought + received - sold - moved);
   if(partial){ try { held = ui({uiTokenAmount: (await rpc('getTokenAccountBalance', [acct])).value}); } catch { held = 0; } }
   const value = held * (c.priceSol || 0);
@@ -615,19 +625,12 @@ async function positionFor(owner, acct, mint, c){
 }
 
 /* ---------- scan one coin ---------- */
-async function scanCoin(mint, N, log, meta){
-  const sym = meta?.symbol || short(mint);
-  const bc = await findPda([new TextEncoder().encode('bonding-curve'), b58decode(mint)], PUMP);
-  const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
-  const viaPump = probe.length > 0;
-  const addr = viaPump ? bc : mint;
-  const line = log(`${sym}: reading launch history…`, 'cur');
-  const {sigs, total, complete} = await oldestSigs(addr, viaPump ? 600 : 250, n => line(`${sym}: reading launch history… ${n.toLocaleString()} txs`, 'cur'));
-  if(!complete) return {mint, symbol: sym, name: meta?.name||'', skipped: `too many transactions (${total.toLocaleString()}+) to reach launch on a free RPC`};
+/* Walk a history (bonding curve or mint) from launch and collect the first N distinct buyers. */
+async function firstBuyers(mint, addr, bc, N, maxPages, sym, line){
+  const {sigs, total, complete} = await oldestSigs(addr, maxPages, n => line(`${sym}: reading launch history… ${n.toLocaleString()} txs`, 'cur'));
+  if(!complete) return {skipped: `too many transactions (${total.toLocaleString()}+) to reach launch on a free RPC`};
   const okSigs = sigs.filter(s => !s.err);
-  if(!okSigs.length) return {mint, symbol: sym, name: meta?.name||'', skipped: 'no successful transactions found'};
-  let supply = 0, decimals = 6;
-  try { const s = (await rpc('getTokenSupply', [mint])).value; supply = Number(s.uiAmount) || 0; decimals = s.decimals ?? 6; } catch {}
+  if(!okSigs.length) return {skipped: 'no successful transactions found'};
   const createSlot = okSigs[0].slot, createTime = okSigs[0].blockTime;
   const buyers = []; const seen = new Set(); let dev = null;
   const cap = Math.min(okSigs.length, N*5);
@@ -638,7 +641,7 @@ async function scanCoin(mint, N, log, meta){
       if(!tx) return;
       if(i===0 && j===0) dev = keysOf(tx)[0]?.pubkey || null;
       const bs = buysIn(tx, mint);
-      const ci = viaPump && bs.length === 1 ? curveIn(tx, keysOf(tx), bc) : 0;
+      const ci = bc && bs.length === 1 ? curveIn(tx, keysOf(tx), bc) : 0;
       for(const b of bs){
         if(seen.has(b.owner) || b.owner === bc) continue;
         seen.add(b.owner);
@@ -648,6 +651,25 @@ async function scanCoin(mint, N, log, meta){
     });
     line(`${sym}: found ${buyers.length}/${N} first buyers`, 'cur');
   }
+  return {buyers, dev, createSlot, createTime};
+}
+async function scanCoin(mint, N, log, meta){
+  const sym = meta?.symbol || short(mint);
+  const bc = await findPda([new TextEncoder().encode('bonding-curve'), b58decode(mint)], PUMP);
+  const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
+  const viaPump = probe.length > 0;
+  const line = log(`${sym}: reading launch history…`, 'cur');
+  let r = await firstBuyers(mint, viaPump ? bc : mint, viaPump ? bc : null, N, viaPump ? 600 : 250, sym, line);
+  // some newer pump.fun coins barely touch the curve account; the mint's own history always has the trades
+  if(viaPump && (r.skipped || r.buyers.length < N / 2)){
+    line(`${sym}: thin curve history, reading the token's own history…`, 'cur');
+    const m = await firstBuyers(mint, mint, bc, N, 300, sym, line);
+    if(!m.skipped && (r.skipped || m.buyers.length > r.buyers.length)) r = m;
+  }
+  if(r.skipped) return {mint, symbol: sym, name: meta?.name||'', skipped: r.skipped};
+  const {buyers, dev, createSlot, createTime} = r;
+  let supply = 0, decimals = 6;
+  try { const s = (await rpc('getTokenSupply', [mint])).value; supply = Number(s.uiAmount) || 0; decimals = s.decimals ?? 6; } catch {}
   const list = buyers.slice(0, N);
   // price now: bonding curve if still on pump, else DexScreener
   let priceSol = 0, migrated = !viaPump;
@@ -1267,7 +1289,7 @@ function blob(k){
   const headset = a.shape === 'chief' ? '<path d="M5.5 15a10.5 10.5 0 0 1 21 0" fill="none" stroke="#4C5D6E" stroke-width="2.4"/><rect x="2.5" y="13.5" width="5" height="8" rx="2" fill="#4C5D6E"/><rect x="24.5" y="13.5" width="5" height="8" rx="2" fill="#4C5D6E"/>' : '';
   return `<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="${a.c}">${SHAPES[a.shape]}</g>${headset}<ellipse cx="12.5" cy="${eyeY}" rx="2" ry="3" fill="#071018"/><ellipse cx="19.5" cy="${eyeY}" rx="2" ry="3" fill="#071018"/></svg>`;
 }
-const VTONE = v => v === 'CLEAN' ? 'good' : v === 'HEAVY BAGS' || v === 'BOTTED' ? 'mid' : 'bad';
+const VTONE = v => v === 'CLEAN' ? 'good' : ['HEAVY BAGS', 'BOTTED', 'NO DATA'].includes(v) ? 'mid' : 'bad';
 const usdS = v => v ? usd(v) : '—';
 let floorTimer = null, floorHome = null;
 function renderDesk(){

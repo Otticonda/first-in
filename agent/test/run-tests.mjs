@@ -18,7 +18,7 @@ const acctOwner = new Map();
 const acctOf = (o, m) => { const k = o + m; if(!tokAcct.has(k)){ const a = rand(); tokAcct.set(k, a); acctOwner.set(a, {owner: o, mint: m}); } return tokAcct.get(k); };
 const holdings = new Map(); // owner|mint -> amount
 function addSig(addr, s){ const l = sigsByAddr.get(addr) || []; l.push(s); sigsByAddr.set(addr, l); }
-function trade({owner, mint, bc, slot, t, solAmt, tokAmt}){ // tokAmt > 0 buy, < 0 sell
+function trade({owner, mint, bc, slot, t, solAmt, tokAmt, curveIndexed = true}){ // tokAmt > 0 buy, < 0 sell
   const acct = acctOf(owner, mint), k = owner + '|' + mint;
   const pre = holdings.get(k) || 0, post = pre + tokAmt; holdings.set(k, post);
   const lam = Math.round(solAmt * 1e9);
@@ -29,12 +29,13 @@ function trade({owner, mint, bc, slot, t, solAmt, tokAmt}){ // tokAmt > 0 buy, <
     transaction: {message: {accountKeys: [{pubkey: owner, signer: true}, {pubkey: acct, signer: false}, {pubkey: bc || rand(), signer: false}]}}};
   const s = {signature: newSig(), slot, blockTime: t, err: null};
   txs.set(s.signature, tx);
-  for(const a of [owner, acct, bc].filter(Boolean)) addSig(a, s);
+  // the mint is always in a trade's accounts; newer pump coins may not leave a trace on the curve account
+  for(const a of [owner, acct, mint, curveIndexed ? bc : null].filter(Boolean)) addSig(a, s);
   return s;
 }
 const nowS = () => Math.floor(Date.now() / 1000);
 
-async function makeCoin(sym, cabal, extraBuyers, launchAgo){
+async function makeCoin(sym, cabal, extraBuyers, launchAgo, {curveLight = false} = {}){
   const mint = rand().slice(0, 40) + 'pump';
   // make sure it's still a valid 32-byte address
   const m = (await import('../lib/solana.mjs')).isAddr(mint) ? mint : rand();
@@ -43,9 +44,10 @@ async function makeCoin(sym, cabal, extraBuyers, launchAgo){
   const dev = rand();
   trade({owner: dev, mint: m, bc, slot: slot0, t: t0, solAmt: 1, tokAmt: 1e7});
   // cabal: all buy in the same slot 2 after launch, all sell within a minute
-  cabal.forEach(w => trade({owner: w, mint: m, bc, slot: slot0 + 2, t: t0 + 1, solAmt: 2, tokAmt: 5e7}));
-  extraBuyers.forEach((w, i) => trade({owner: w, mint: m, bc, slot: slot0 + 5 + i * 3, t: t0 + 3 + i * 2, solAmt: 0.5, tokAmt: 1e7}));
-  cabal.forEach((w, i) => trade({owner: w, mint: m, bc, slot: slot0 + 900, t: t0 + 600 + i * 20, solAmt: 9, tokAmt: -5e7}));
+  const ci = !curveLight;
+  cabal.forEach(w => trade({owner: w, mint: m, bc, slot: slot0 + 2, t: t0 + 1, solAmt: 2, tokAmt: 5e7, curveIndexed: ci}));
+  extraBuyers.forEach((w, i) => trade({owner: w, mint: m, bc, slot: slot0 + 5 + i * 3, t: t0 + 3 + i * 2, solAmt: 0.5, tokAmt: 1e7, curveIndexed: ci}));
+  cabal.forEach((w, i) => trade({owner: w, mint: m, bc, slot: slot0 + 900, t: t0 + 600 + i * 20, solAmt: 9, tokAmt: -5e7, curveIndexed: ci}));
   const data = Buffer.alloc(49); data.writeBigUInt64LE(800000000000000n, 8); data.writeBigUInt64LE(40000000000n, 16); data[48] = 0;
   accounts.set(bc, data.toString('base64'));
   return {mint: m, sym, bc, dev, createdAt: (t0) * 1000};
@@ -54,7 +56,8 @@ async function makeCoin(sym, cabal, extraBuyers, launchAgo){
 const W1 = rand(), W2 = rand();
 const cabal = [rand(), rand(), rand()];
 const coins = [];
-for(const [i, s] of ['ALPHA', 'BETA', 'GAMMA'].entries()) coins.push(await makeCoin(s, cabal, Array.from({length: 6}, rand), 3600 * (i + 2)));
+// GAMMA is a newer-style pump coin: its trades never touch the curve account, so the scanner must fall back to the mint
+for(const [i, s] of ['ALPHA', 'BETA', 'GAMMA'].entries()) coins.push(await makeCoin(s, cabal, Array.from({length: 6}, rand), 3600 * (i + 2), {curveLight: s === 'GAMMA'}));
 coins.forEach((c, i) => { c.symbol = c.sym; c.handle = c.sym.toLowerCase() + 'coin'; c.vol = 900000 - i * 1000; c.liqUsd = 60000; });
 // DELTA reuses ALPHA's X handle (recycled account), TINY has no liquidity: both must die before any credits are spent
 const delta = await makeCoin('DELTA', [], Array.from({length: 3}, rand), 3600 * 3); Object.assign(delta, {symbol: 'DELTA', handle: 'alphacoin', vol: 500000, liqUsd: 60000});
@@ -140,7 +143,7 @@ const go = (task, e = env) => runAgent({task, env: e, fetchImpl: fakeFetch, stat
 
 await seed(statePath, cfgPath);
 // 1. first watch run only bookmarks each wallet
-trade({owner: W1, mint: coins[0].mint, slot: 1, t: nowS() - 9000, solAmt: 1, tokAmt: 1e6});
+trade({owner: W1, mint: rand(), slot: 1, t: nowS() - 9000, solAmt: 1, tokAmt: 1e6});
 let s = await go('watch');
 assert.equal(s.watch.length, 2);
 assert.ok(s.watch.every(w => 'lastSig' in w));
@@ -162,7 +165,8 @@ sent.length = 0;
 s = await go('scan');
 const scanned = s.coins.filter(c => !c.skipped);
 assert.equal(scanned.length, 3, 'all three runners scanned: ' + JSON.stringify(s.log.slice(0, 8)));
-assert.ok(scanned.every(c => c.buyers.length >= 9));
+assert.ok(scanned.every(c => c.buyers.length >= 9), scanned.map(c => c.symbol + ' ' + c.buyers.length + ' ' + JSON.stringify(c.diag)).join('\n'));
+assert.equal(scanned.find(c => c.symbol === 'GAMMA').diag.addr, 'mint', 'thin curve history falls back to the mint');
 const top = s.analysis.clusters[0];
 assert.ok(top, 'cluster found');
 assert.deepEqual([...top.wallets].sort(), [...cabal].sort());
