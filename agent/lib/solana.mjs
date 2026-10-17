@@ -270,9 +270,9 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
     const viaPump = probe.length > 0;
     let r = await firstBuyers(mint, viaPump ? bc : mint, viaPump ? bc : null, N, viaPump ? maxPagesPump : maxPagesOther);
     // Some newer pump.fun coins barely touch the curve account; the mint's own history always has the trades.
-    if(viaPump && (r.skipped || r.buyers.length < N / 2)){
+    if(viaPump && (r.skipped || r.buyers.length < N / 2 || r.diag.total < 200)){
       const m = await firstBuyers(mint, mint, bc, N, maxPagesOther);
-      if(!m.skipped && (r.skipped || m.buyers.length > r.buyers.length)){ m.diag.curveTried = {...r.diag}; r = m; }
+      if(!m.skipped && (r.skipped || m.buyers.length > r.buyers.length || (m.buyers.length === r.buyers.length && m.diag.total > r.diag.total))){ m.diag.curveTried = {...r.diag}; r = m; }
       else r.diag.mintTried = {...m.diag};
     }
     const diag = r.diag;

@@ -41,6 +41,11 @@ export async function vetChain(coin, rpc, {cabalWallets = new Set()} = {}){
 
   // early buyers: snipers, still-loaded, cabal
   if(buyers.length){
+    // bundled launch: several wallets buying inside the same transaction
+    const perTx = new Map(); for(const b of buyers) if(b.sig) perTx.set(b.sig, (perTx.get(b.sig) || 0) + 1);
+    const bundled = buyers.filter(b => b.sig && perTx.get(b.sig) >= 3).length;
+    facts.bundledShare = bundled / buyers.length;
+    if(bundled) flags.bundled_launch = r2(Math.min(1, facts.bundledShare / 0.4));
     const snipers = buyers.filter(b => b.slotDelta <= 1).length;
     facts.sniperShare = snipers / buyers.length;
     flags.sniped_launch = r2(Math.min(1, facts.sniperShare / 0.5));
@@ -59,6 +64,7 @@ export async function vetChain(coin, rpc, {cabalWallets = new Set()} = {}){
   if(facts.devPct != null) bits.push(`dev ${(facts.devPct * 100).toFixed(1)}%`);
   if(facts.top10Pct != null) bits.push(`top10 ${Math.round(facts.top10Pct * 100)}%`);
   if(facts.sniperShare != null) bits.push(`snipers ${Math.round(facts.sniperShare * 100)}%`);
+  if(facts.bundledShare) bits.push(`bundled ${Math.round(facts.bundledShare * 100)}%`);
   if(facts.cabalWallets) bits.push(`${facts.cabalWallets} cabal wallets early`);
   return {flags, facts, worst, score: r2(score), line: bits.join(' · ')};
 }

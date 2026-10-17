@@ -187,6 +187,22 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
 .wsec{padding:10px 16px;font-size:10px;letter-spacing:.15em;color:var(--dim);text-transform:uppercase;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .wsec .spacer{flex:1}
 /* desk */
+.octo{position:absolute;left:11%;top:28%;width:clamp(44px,8vw,64px);transform:translate(-50%,-50%);z-index:3}
+.octo svg{width:100%;display:block;overflow:visible}
+.octo.on svg{animation:hop .5s ease-in-out 2}
+.tents{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}
+.tents path{fill:none;stroke:#F472D0;stroke-width:2.2;stroke-linecap:round;vector-effect:non-scaling-stroke;opacity:.28;stroke-dasharray:100;stroke-dashoffset:0}
+.tents.reach path{opacity:.9;animation:reach 1.1s ease-out both}
+@keyframes reach{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
+.grab{position:absolute;right:2.5%;transform:translateY(-50%);z-index:2;font-size:9.5px;padding:3px 6px;border:1px solid rgba(244,114,208,.45);background:#0A0710;color:#F9C4EC;border-radius:2px;white-space:nowrap;font-variant-numeric:tabular-nums;max-width:22%;overflow:hidden;text-overflow:ellipsis}
+.tents.reach ~ .grab{border-color:#F472D0;color:#fff}
+.agent.octocard{grid-column:1/-1}
+.ostats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;font-size:10px;color:var(--muted)}
+.ostats b{display:block;color:var(--fg);font-size:13px;font-variant-numeric:tabular-nums}
+.ograbs{display:flex;gap:5px;flex-wrap:wrap}
+.ograbs a{font-size:10.5px;padding:4px 7px;border:1px solid rgba(244,114,208,.4);border-radius:2px;color:#F9C4EC;text-decoration:none;font-variant-numeric:tabular-nums}
+.ograbs a:hover{border-color:#F472D0;color:#fff}
+.src{margin-right:3px}
 .floor{position:relative;aspect-ratio:4/3.3;background:#070B11;border:1px solid var(--line);overflow:hidden;
   background-image:linear-gradient(rgba(63,216,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(63,216,255,.05) 1px,transparent 1px);background-size:20px 20px}
 @media (min-width:620px){.floor{aspect-ratio:16/9}}
@@ -194,7 +210,7 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
 .board{position:absolute;left:50%;top:15%;transform:translateX(-50%);width:54%;min-height:15%;background:#03070C;border:1px solid var(--line2);box-shadow:0 0 0 3px #0B121A;padding:7px 9px;display:flex;flex-direction:column;justify-content:center;gap:3px;text-align:center}
 .board b{font:700 clamp(15px,4.6vw,22px)/1 var(--f-display);letter-spacing:.04em}
 .board small{font-size:10px;color:var(--muted);letter-spacing:.04em}
-.board{top:13%;height:24%;overflow:hidden}
+.board{top:13%;height:24%;overflow:hidden;z-index:2}
 .board .say{font-size:11px;line-height:1.35;color:var(--fg);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .board.talk{border-color:var(--cy)}
 .vd{font:700 10px/1 var(--f-mono);letter-spacing:.08em;padding:3px 6px;border:1px solid currentColor;border-radius:2px;white-space:nowrap}
@@ -366,7 +382,7 @@ details.io summary{cursor:pointer;color:var(--muted);font-size:11px;letter-spaci
   <section id="agentView" style="display:flex;flex-direction:column;gap:16px" hidden>
     <div class="panel">
       <div class="ph"><h2>The desk</h2><span class="tagline" id="agentAge">runs on its own · 24/7</span></div>
-      <p class="hint" style="margin:0">Six agents work every coin in order: Scan finds it, Social reads its X, Vet reads the chain, Hunt looks for cabals, Watch tracks wallets, and Chief gives the verdict. Nobody takes a position.</p>
+      <p class="hint" style="margin:0">Octo reads pump.fun first and grabs curve coins worth a look. Then the desk works each coin in order: Scan finds it, Social reads its X, Vet reads the chain, Hunt looks for cabals, Watch tracks wallets, and Chief gives the verdict. Nobody takes a position.</p>
       <div class="kpis k4" id="agentKpis"></div>
       <div class="row" style="align-items:center">
         <button class="sm" id="agentRefresh">Refresh</button>
@@ -1233,7 +1249,7 @@ async function loadAgent(){
   renderAgent();
 }
 const VERDICT = {cabal: ['dev','Cabal'], smart_money: ['smart','Smart money'], bot_farm: ['snipe','Bot farm'], noise: ['warn','Noise']};
-const AICON = {buy: '👀', overlap: '🔥', cluster: '🕵️', coin: '🔎', recap: '📋', watch: '➕', verdict: '🧑‍⚖️'};
+const AICON = {buy: '👀', overlap: '🔥', cluster: '🕵️', coin: '🔎', recap: '📋', watch: '➕', verdict: '🧑‍⚖️', octo: '🐙'};
 const agoMs = ms => ms ? ago(ms / 1000) : 'never';
 const kpi = (k, v) => `<div class="kpi"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>`;
 function groupCard(c){
@@ -1289,9 +1305,23 @@ function blob(k){
   const headset = a.shape === 'chief' ? '<path d="M5.5 15a10.5 10.5 0 0 1 21 0" fill="none" stroke="#4C5D6E" stroke-width="2.4"/><rect x="2.5" y="13.5" width="5" height="8" rx="2" fill="#4C5D6E"/><rect x="24.5" y="13.5" width="5" height="8" rx="2" fill="#4C5D6E"/>' : '';
   return `<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="${a.c}">${SHAPES[a.shape]}</g>${headset}<ellipse cx="12.5" cy="${eyeY}" rx="2" ry="3" fill="#071018"/><ellipse cx="19.5" cy="${eyeY}" rx="2" ry="3" fill="#071018"/></svg>`;
 }
+const OCTO_C = '#F472D0';
+function octoSvg(){
+  const legs = [8, 13, 18, 23, 28, 33, 38].map((x, i) => `<path d="M${x} 27 q${i % 2 ? 3 : -3} 8 ${i < 3 ? -2 : i > 3 ? 2 : 0} 15" stroke="${OCTO_C}" stroke-width="3.4" fill="none" stroke-linecap="round"/>`).join('');
+  return `<svg viewBox="0 0 46 46" aria-hidden="true">${legs}<path d="M5 26C5 12 13 3 23 3s18 9 18 23c0 3-3 4-18 4S5 29 5 26z" fill="${OCTO_C}"/><circle cx="17" cy="18" r="3.6" fill="#fff"/><circle cx="29" cy="18" r="3.6" fill="#fff"/><circle cx="17.8" cy="18.6" r="1.9" fill="#071018"/><circle cx="29.8" cy="18.6" r="1.9" fill="#071018"/></svg>`;
+}
 const VTONE = v => v === 'CLEAN' ? 'good' : ['HEAVY BAGS', 'BOTTED', 'NO DATA'].includes(v) ? 'mid' : 'bad';
 const usdS = v => v ? usd(v) : '—';
 let floorTimer = null, floorHome = null;
+/* Octo in the corner, tentacles reaching for whatever it grabbed on pump.fun */
+function octoFloor(o){
+  const grabs = (o?.grabs || []).slice(0, 4);
+  const ys = [16, 25, 34, 43];
+  const tents = grabs.map((g, i) => `<path pathLength="100" d="M12 31 C 30 ${10 + i * 9}, 62 ${4 + i * 10}, 82 ${ys[i]}"/>`).join('');
+  return `<svg class="tents" id="tents" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${tents}</svg>
+    ${grabs.map((g, i) => `<div class="grab" style="top:${ys[i]}%" title="${esc(g.symbol)} · score ${g.score}">$${esc(g.symbol)} ${Math.round((g.progress || 0) * 100)}%</div>`).join('')}
+    <div class="octo" id="octoBot" title="Octo">${octoSvg()}</div>`;
+}
 function renderDesk(){
   const d = agent?.desk;
   const fl = $('floor'), cr = $('crew'), pp = $('pipeline'), vv = $('verdicts'), th = $('thresholds');
@@ -1304,12 +1334,21 @@ function renderDesk(){
   const boardIdle = v0 ? `<b>$${esc(v0.symbol)}</b><div><span class="vd ${VTONE(v0.verdict)}">${esc(v0.verdict)}</span></div><small>${esc(usdS(v0.mcap))} · ${v0.wins}/${v0.read} early up</small>` : `<small>No coin on the board yet. The first scan puts one here.</small>`;
   fl.innerHTML = `<div class="tape">${(agent.watch || []).length} WALLETS · ${(agent.coins || []).filter(c => !c.skipped).length} COINS · ${groups} GROUP${groups === 1 ? '' : 'S'} · ${clean}/${verd.length} CLEAN · ${(agent.credits?.used || 0).toLocaleString()} CR</div>
     <div class="board" id="board">${boardIdle}</div>
+    ${octoFloor(d.agents?.octo)}
     ${Object.entries(CREW).map(([k, a]) => `<div class="desk" style="left:${a.x}%;top:${a.y + 5}%;--c:${a.c}"><div class="top"></div><span>${esc(a.desk)}</span></div>
       <div class="bot" id="bot-${k}" style="left:${a.x}%;top:${a.y - 6}%" title="${esc(a.name)}">${blob(k)}</div>`).join('')}
 `;
   const ag = d.agents || {};
   const live = t => t && agent.updatedAt && t >= agent.updatedAt - 20 * 60e3;
-  cr.innerHTML = ['chief', 'scan', 'social', 'vet', 'hunt', 'watch'].map(k => {
+  const oc = ag.octo;
+  const octoCard = oc ? `<div class="agent octocard" id="crew-octo" style="--c:${OCTO_C}">
+      <div class="hd">${octoSvg()}<div><h3>Octo</h3><div class="role">reads pump.fun first, grabs curve coins worth a look</div></div></div>
+      <div class="ostats"><div>pages read<b>${(oc.stats?.pages || 0).toLocaleString()}</b></div><div>coins touched<b>${(oc.stats?.touched || 0).toLocaleString()}</b></div><div>grabbed<b>${(oc.stats?.grabbed || 0).toLocaleString()}</b></div><div>inked<b>${(oc.stats?.inked || 0).toLocaleString()}</b></div></div>
+      ${oc.grabs?.length ? `<div class="ograbs">${oc.grabs.map(g => `<a href="https://pump.fun/coin/${esc(g.mint)}" target="_blank" rel="noopener">$${esc(g.symbol)} · ${Number(g.score).toFixed(2)} · ${Math.round((g.progress || 0) * 100)}% curve</a>`).join('')}</div>` : `<div class="last">${oc.ok === false ? esc(oc.error || 'Could not reach pump.fun on the last run.') : 'Nothing on the curve worth grabbing right now.'}</div>`}
+      <div class="last">${esc(oc.last || '')}</div>
+      <div class="stat ${live(oc.t) ? 'live' : ''}">${live(oc.t) ? '● on the move' : oc.t ? 'idle · ' + esc(agoMs(oc.t)) : 'idle'}</div>
+    </div>` : '';
+  cr.innerHTML = octoCard + ['chief', 'scan', 'social', 'vet', 'hunt', 'watch'].map(k => {
     const a = ag[k] || {}, c = CREW[k];
     const val = typeof a.value === 'number' ? Math.max(0, Math.min(1, a.value)) : null;
     return `<div class="agent" id="crew-${k}" style="--c:${c.c}">
@@ -1328,7 +1367,7 @@ function renderDesk(){
     : kind === 'chain' && !['SCANNED', 'BUDGET'].includes(v) ? `<span class="vd ${VTONE(v)}">${esc(v)}</span>` : `<span class="${kind === 'chain' ? 'na' : 'no'}">${esc(String(v).replace(/_/g, ' ').toLowerCase())}</span>`;
   pp.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>The filter</h2><span class="tagline">${d.pipeline ? `${d.pipeline.seen} coin${d.pipeline.seen === 1 ? '' : 's'} seen · ${esc(agoMs(d.pipeline.t))}` : 'waiting for a scan'}</span></div>
     <div class="pipe"><div class="order"><span>free kill</span><em>→</em><span>social kill</span><em>→</em><span>chain kill</span><em>→</em><span>verdict</span><p class="hint" style="margin:0;flex-basis:100%">Cheapest checks first. Credits only go on survivors.</p></div>
-    ${rows.length ? `<div class="prow h"><span>coin</span><span>free</span><span>social</span><span>chain</span></div>` + rows.map(r => `<div class="prow"><b>$${esc(r.symbol)}</b>${cell(r.free)}${cell(r.social)}${cell(r.chain, 'chain')}</div>`).join('') : '<div class="prow"><span class="na">The next scan fills this in.</span></div>'}</div></div>`;
+    ${rows.length ? `<div class="prow h"><span>coin</span><span>free</span><span>social</span><span>chain</span></div>` + rows.map(r => `<div class="prow"><b>${r.src === 'octo' ? '<span class="src" title="found by Octo on pump.fun">🐙</span>' : ''}$${esc(r.symbol)}</b>${cell(r.free)}${cell(r.social)}${cell(r.chain, 'chain')}</div>`).join('') : '<div class="prow"><span class="na">The next scan fills this in.</span></div>'}</div></div>`;
 
   vv.innerHTML = verd.length ? `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Chief's verdicts</h2><span class="tagline">${clean} clean of ${verd.length}</span></div><div class="coin">${verd.slice(0, 10).map(v => `<div class="vcard">
       <div class="t1"><b>$${esc(v.symbol)}</b><span class="vd ${VTONE(v.verdict)}">${esc(v.verdict)}</span><span class="hint">${esc(usdS(v.mcap))} mcap · ${esc(agoMs(v.t))}</span></div>
@@ -1343,19 +1382,31 @@ function renderDesk(){
   const t = d.thresholds;
   th.innerHTML = t ? `<div style="display:flex;flex-direction:column;gap:10px"><div class="ph"><h2>Thresholds</h2><span class="tagline">every number the desk believes</span></div><div class="thr">
     <div><span class="c"># hard: market numbers, cost nothing</span><br>${Object.entries(t.hard).map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(Number(v).toLocaleString())}</span>`).join('<br>')}</div>
+    ${t.octo ? `<div><span class="c"># octo: pump.fun curve coins</span><br>${Object.entries(t.octo).map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(Number(v).toLocaleString())}</span>`).join('<br>')}</div>` : ''}
     <div><span class="c"># soft: kill when the flag goes over</span><br>${Object.entries(t.soft).map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">max ${esc(v)}</span>`).join('<br>')}</div>
   </div></div>` : '';
 
   // replay the latest events on the floor
-  const evs = (d.events || []).filter(e => CREW[e.agent]).slice(0, 10).reverse();
+  const evs = (d.events || []).filter(e => CREW[e.agent] || e.agent === 'octo').slice(0, 10).reverse();
   if(!evs.length) return;
   let i = 0;
   const step = () => {
     if($('agentView').hidden || document.hidden) return;
-    const e = evs[i++ % evs.length], a = CREW[e.agent], bot = $('bot-' + e.agent), board = $('board');
-    if(!bot || !board) return;
+    const e = evs[i++ % evs.length], board = $('board');
+    if(!board) return;
     document.querySelectorAll('.agent.on').forEach(x => x.classList.remove('on'));
     $('crew-' + e.agent)?.classList.add('on');
+    if(e.agent === 'octo'){
+      // Octo stays in its corner and reaches out
+      const ob = $('octoBot'), tn = $('tents');
+      if(ob){ ob.classList.remove('on'); void ob.offsetWidth; ob.classList.add('on'); }
+      if(tn && !RM){ tn.classList.remove('reach'); void tn.getBoundingClientRect(); tn.classList.add('reach'); }
+      board.classList.add('talk'); board.innerHTML = `<small style="color:${OCTO_C}">Octo</small><span class="say">${esc(e.text)}</span>`;
+      floorHome = setTimeout(() => { board.classList.remove('talk'); board.innerHTML = boardIdle; tn?.classList.remove('reach'); }, 3700);
+      return;
+    }
+    const a = CREW[e.agent], bot = $('bot-' + e.agent);
+    if(!bot) return;
     // walk up to the board, report, walk back
     if(!RM){ bot.style.left = '50%'; bot.style.top = '45%'; }
     bot.classList.remove('on'); void bot.offsetWidth; bot.classList.add('on');

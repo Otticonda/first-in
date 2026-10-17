@@ -12,6 +12,7 @@ import {createSolana, isAddr, short, BudgetError} from './lib/solana.mjs';
 import {pairInfo, candidates} from './lib/dex.mjs';
 import {checkSocial} from './lib/social.mjs';
 import {vetChain} from './lib/vet.mjs';
+import {crawlPump, octoKill, octoScore} from './lib/octo.mjs';
 import {DEFAULT_THRESHOLDS, freeKill, priority, socialKill, chiefVerdict} from './lib/desk.mjs';
 import {analyze, matchPrevious, round} from './lib/cabal.mjs';
 import {judgeClusters, writeRecap} from './lib/brain.mjs';
@@ -26,6 +27,7 @@ const freshState = () => ({
   analysis: {coinsAnalyzed: 0, bots: [], repeaters: [], clusters: []},
   judged: [], alerts: [], recaps: [], log: [],
   desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null},
+  octo: {at: 0, reqs: 0, touched: 0, grabbed: 0, inked: 0, ok: true, error: '', grabs: [], pinged: {}, creators: {}},
   credits: {month: '', used: 0, day: '', today: 0, lastRun: 0},
 });
 
@@ -76,6 +78,9 @@ function deskAgents(state, creditsThisRun){
     vet: card('vet', 'chain risk, is it real', {big: vet ? vet.worst : '—', metric: vet ? `${vet.worst} · $${v0.symbol}` : 'no coin vetted', value: vet ? vet.score : null}),
     social: card('social', "the project's X account", {big: soc ? (soc.handle ? '@' + soc.handle : soc.kind) : '—', metric: soc ? `${soc.worst} · $${v0.symbol}` : 'no account read', value: soc ? soc.score : null}),
     hunt: card('hunt', 'who moves together', {big: `${groups.length} group${groups.length === 1 ? '' : 's'}`, metric: `${state.analysis.coinsAnalyzed || 0} coins in memory`, value: groups[0]?.confidence != null ? groups[0].confidence / 100 : null}),
+    octo: card('octo', 'reads pump.fun first', {big: `${state.octo.grabs.length} grabbed`, metric: state.octo.grabs[0] ? `best: $${state.octo.grabs[0].symbol}` : 'best grab', value: state.octo.grabs[0]?.score ?? null,
+      stats: {pages: state.octo.reqs, touched: state.octo.touched, grabbed: state.octo.grabbed, inked: state.octo.inked}, ok: state.octo.ok, error: state.octo.error,
+      grabs: state.octo.grabs.slice(0, 6).map(g => ({mint: g.mint, symbol: g.symbol, score: g.score, progress: g.progress, mcap: g.mcap}))}),
     watch: card('watch', 'whale radar', {big: `${state.watch.length} wallets`, metric: `${buys24} buys in 24h`, value: state.watch.length ? Math.min(1, buys24 / Math.max(1, state.watch.length * 2)) : null}),
     credits: creditsThisRun,
   };
@@ -120,7 +125,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
         if(cmd === 'start' || cmd === 'help'){
           replies.push(['<b>First In agent</b>',
             '/watch &lt;wallet&gt; [label] – watch a wallet', '/unwatch &lt;wallet or label&gt;', '/list – watched wallets',
-            '/scan &lt;CA&gt; – scan a coin\'s first buyers', '/status – credits, last runs', '/recap – recap now',
+            '/scan &lt;CA&gt; – scan a coin\'s first buyers', '/octo – what Octo grabbed on pump.fun', '/status – credits, last runs', '/recap – recap now',
             '/pause · /resume – stop or restart scans and wallet checks', '', 'I read commands every ~15 min.'].join('\n'));
         } else if(cmd === 'watch'){
           const [a, ...lbl] = args;
@@ -141,6 +146,9 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
           state.coins = state.coins.filter(c => c.mint !== m);
           if(!state.queue.includes(m)) state.queue.push(m);
           replies.push(`Queued <code>${esc(short(m))}</code>. Scanning it this run.`);
+        } else if(cmd === 'octo'){
+          const g = state.octo.grabs;
+          replies.push(g.length ? `🐙 <b>Octo's grabs</b>\n` + g.slice(0, 8).map(x => `<b>$${esc(x.symbol)}</b> ${x.score.toFixed(2)} · ${usd(x.mcap)} · ${esc(x.why)}`).join('\n') : '🐙 Octo has nothing grabbed right now.');
         } else if(cmd === 'status'){
           const last = k => state.runs[k] ? Math.round((now - state.runs[k]) / 60000) + 'm ago' : 'never';
           const top = state.analysis.clusters.find(c => c.verdict === 'cabal');
@@ -338,14 +346,57 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       `➕ Auto-watching ${added.length} new wallet${added.length > 1 ? 's' : ''} from today's hunt: ${added.slice(0, 8).map(gmgn).join(' · ')}`, {wallets: added});
   }
 
+  /* OCTO: reads pump.fun's live tape, keeps the curve coins worth a closer look */
+  async function octoJob(){
+    const oc = cfg.desk.octo;
+    const {coins, reqs, ok, error} = await crawlPump({fetchImpl, pages: oc.pages});
+    const o = state.octo;
+    o.at = now; o.reqs += reqs; o.ok = !!ok; o.error = error;
+    if(!ok){ deskEvent('octo', error || 'could not reach pump.fun'); note('Octo: ' + (error || 'pump.fun unreachable')); return []; }
+    for(const c of coins) if(c.creator){ const list = new Set(o.creators[c.creator] || []); list.add(c.mint); o.creators[c.creator] = [...list].slice(-20); }
+    const done = new Set(state.coins.map(c => c.mint));
+    let inked = 0;
+    const grabs = [];
+    for(const c of coins){
+      const k = octoKill(c, oc, now);
+      if(!k.pass){ inked++; continue; }
+      const sc = octoScore(c, {creatorCoins: (o.creators[c.creator] || []).length, now});
+      if(sc.score < oc.min_score){ inked++; continue; }
+      grabs.push({...c, score: sc.score, why: sc.why, scanned: done.has(c.mint), t: now});
+    }
+    grabs.sort((a, b) => b.score - a.score);
+    o.touched += coins.length; o.inked += inked;
+    const fresh = grabs.filter(g => !o.grabs.some(x => x.mint === g.mint));
+    o.grabbed += fresh.length;
+    o.grabs = grabs.slice(0, 10);
+    o.lastRun = {touched: coins.length, grabbed: grabs.length, inked};
+    deskEvent('octo', grabs.length ? `touched ${coins.length} coins on pump.fun, grabbed ${grabs.slice(0, 4).map(g => '$' + g.symbol).join(' ')}` : `touched ${coins.length} coins on pump.fun, nothing worth grabbing`);
+    note(`Octo: ${coins.length} live coins, ${grabs.length} grabbed, ${inked} inked.`);
+    // ping the strongest new grabs, once each
+    for(const [m, t] of Object.entries(o.pinged)) if(now - t > 2 * DAY) delete o.pinged[m];
+    let sent = 0;
+    for(const g of grabs){
+      if(sent >= oc.alerts_per_run || g.score < oc.alert_score || o.pinged[g.mint]) continue;
+      o.pinged[g.mint] = now; sent++;
+      alert('octo', `Octo grabbed $${g.symbol}`, `${g.why} · ${usd(g.mcap)}`,
+        `🐙 <b>Octo grabbed $${esc(g.symbol)}</b> · score ${g.score.toFixed(2)} · ${usd(g.mcap)}\n${esc(g.why)}\n<a href="https://pump.fun/coin/${g.mint}">pump.fun</a> · <code>${g.mint}</code>`, {mint: g.mint});
+    }
+    return grabs;
+  }
+
   /* the filter: free_kill -> social_kill -> chain (scan + vet) -> verdict. The order is the whole point. */
   async function scanJob(){
     if(creditsLeft() < cfg.scan.creditBudgetPerRun){ note('Monthly credit budget nearly used; skipping discovery.'); return []; }
     const queued = await queuedItems(state.queue);
     const exclude = new Set([...state.coins.map(c => c.mint), ...state.queue, ...Object.keys(state.desk.killed || {})]);
     const seen = await candidates({exclude}, fetchImpl);
-    const pipe = seen.map(c => ({c, free: freeKill(c, cfg.desk.hard, now)}));
-    const alive = pipe.filter(p => p.free.pass).sort((a, b) => priority(b.c) - priority(a.c));
+    const dexPipe = seen.map(c => ({c, src: 'dex', free: freeKill(c, cfg.desk.hard, now)}));
+    // Octo's grabs already passed its own curve rules, so they enter after the free kill
+    const octoPipe = state.octo.grabs.filter(g => !exclude.has(g.mint) && !seen.some(c => c.mint === g.mint)).map(c => ({c, src: 'octo', free: {pass: true}}));
+    const pipe = [...octoPipe, ...dexPipe];
+    const dexAlive = dexPipe.filter(p => p.free.pass).sort((a, b) => priority(b.c) - priority(a.c));
+    const alive = [];
+    for(let i = 0; i < Math.max(octoPipe.length, dexAlive.length); i++){ if(octoPipe[i]) alive.push(octoPipe[i]); if(dexAlive[i]) alive.push(dexAlive[i]); }
     deskEvent('scan', `${seen.length} coin${seen.length === 1 ? '' : 's'} on the tape, ${alive.length} survive the free kill`);
     const picks = [];
     for(const p of alive.slice(0, cfg.desk.socialChecksPerRun)){
@@ -354,11 +405,11 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
       if(!p.socialKill.pass){ state.desk.killed = {...(state.desk.killed || {}), [p.c.mint]: now}; }
       if(p.socialKill.pass && picks.length < cfg.scan.coinsPerRun){ p.chain = true; picks.push({...p.c, social: p.social}); }
     }
-    note(`Discovery: ${seen.length} seen, ${alive.length} passed free_kill, scanning ${picks.map(f => '$' + f.symbol).join(', ') || 'none'}.`);
+    note(`Discovery: ${seen.length} on DexScreener, ${octoPipe.length} from Octo, ${alive.length} passed free_kill, scanning ${picks.map(f => '$' + f.symbol).join(', ') || 'none'}.`);
     const done = await scanCoins([...queued, ...picks]);
     const scannedNow = new Set(done.map(r => r.mint));
-    state.desk.pipeline = {t: now, seen: seen.length, rows: pipe.sort((a, b) => (b.chain ? 3 : b.social ? 2 : b.free.pass ? 1 : 0) - (a.chain ? 3 : a.social ? 2 : a.free.pass ? 1 : 0) || priority(b.c) - priority(a.c)).slice(0, 14).map(p => ({
-      mint: p.c.mint, symbol: p.c.symbol, mcap: p.c.mcap, vol24: p.c.vol24,
+    state.desk.pipeline = {t: now, seen: seen.length + octoPipe.length, rows: pipe.sort((a, b) => (b.chain ? 3 : b.social ? 2 : b.free.pass ? 1 : 0) - (a.chain ? 3 : a.social ? 2 : a.free.pass ? 1 : 0) || priority(b.c) - priority(a.c)).slice(0, 14).map(p => ({
+      mint: p.c.mint, symbol: p.c.symbol, mcap: p.c.mcap, vol24: p.c.vol24, src: p.src,
       free: p.free.pass ? 'PASS' : p.free.reason, social: p.social ? (p.socialKill.pass ? 'PASS' : p.socialKill.reason) : null,
       chain: p.chain ? (scannedNow.has(p.c.mint) ? 'SCANNED' : 'BUDGET') : null,
     }))};
@@ -410,6 +461,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   await run('commands', handleCommands);
   const wants = t => task === t || task === 'all';
   if(!state.paused){
+    if(cfg.desk.octo.enabled) jobs.push(['octo', octoJob]);
     if(wants('watch')) jobs.push(['watch', watchWallets]);
     if(wants('scan')) jobs.push(['scan', async () => { const done = await scanJob(); await hunt(); judgeCoins(done); }]);
     else if(state.queue.length) jobs.push(['scan-queue', async () => { const done = await scanCoins(await queuedItems(state.queue.slice(0, 2))); if(done.length){ await hunt(); judgeCoins(done); } }]);
@@ -421,7 +473,8 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   if(outbox.length) await tg.send(outbox.join('\n\n'));
 
   state.rpc = {at: now, task, ...sol.stats};
-  state.desk.thresholds = {hard: cfg.desk.hard, soft: cfg.desk.soft};
+  const {enabled, pages, alerts_per_run, ...octoRules} = cfg.desk.octo;
+  state.desk.thresholds = {hard: cfg.desk.hard, octo: octoRules, soft: cfg.desk.soft};
   state.desk.agents = deskAgents(state, sol.credits);
   state.credits.used += sol.credits; state.credits.today += sol.credits; state.credits.lastRun = sol.credits;
   state.updatedAt = Date.now();

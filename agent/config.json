@@ -9,11 +9,11 @@
     "maxWallets": 60
   },
   "scan": {
-    "coinsPerRun": 2,
+    "coinsPerRun": 3,
     "buyersPerCoin": 30,
     "maxPagesPump": 300,
     "maxPagesOther": 300,
-    "creditBudgetPerRun": 1500,
+    "creditBudgetPerRun": 2000,
     "keepCoins": 50,
     "rpcGapMs": 200
   },
@@ -32,11 +32,24 @@
       "ghost_account": 0.9,
       "dev_still_loaded": 0.6,
       "top10_concentration": 0.7,
+      "bundled_launch": 0.6,
       "sniped_launch": 0.8,
       "cabal_in_early": 0.5,
       "early_bags_loaded": 0.9
     },
-    "socialChecksPerRun": 6
+    "socialChecksPerRun": 6,
+    "octo": {
+      "enabled": true,
+      "pages": 3,
+      "min_age_minutes": 5,
+      "max_age_hours": 24,
+      "min_curve_progress": 0.2,
+      "min_mcap_vs_ath": 0.5,
+      "min_mcap_usd": 8000,
+      "min_score": 0.5,
+      "alert_score": 0.72,
+      "alerts_per_run": 2
+    }
   },
   "cabal": {
     "minSharedCoins": 2,

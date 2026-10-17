@@ -7,6 +7,16 @@ import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {b58encode, bondingCurveOf} from '../lib/solana.mjs';
 import {runAgent, seed} from '../run.mjs';
+import {vetChain} from '../lib/vet.mjs';
+import {chiefVerdict, DEFAULT_THRESHOLDS} from '../lib/desk.mjs';
+
+// a bundled launch: 6 of 10 first buyers bought inside two transactions
+{
+  const buyers = Array.from({length: 10}, (_, i) => ({owner: 'w' + i, slotDelta: i < 6 ? 0 : 4, sig: i < 3 ? 'A' : i < 6 ? 'B' : 's' + i, pos: {held: 0, pnl: 1, status: 'sold'}}));
+  const v = await vetChain({mint: 'm', supply: 0, buyers}, async () => ({value: []}));
+  assert.equal(v.facts.bundledShare, 0.6);
+  assert.equal(chiefVerdict({vet: v, read: 10}, DEFAULT_THRESHOLDS.soft).verdict, 'BUNDLED');
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const rand = () => b58encode(globalThis.crypto.getRandomValues(new Uint8Array(32)).map((x, i) => i === 0 ? (x || 1) : x));
@@ -63,6 +73,12 @@ coins.forEach((c, i) => { c.symbol = c.sym; c.handle = c.sym.toLowerCase() + 'co
 const delta = await makeCoin('DELTA', [], Array.from({length: 3}, rand), 3600 * 3); Object.assign(delta, {symbol: 'DELTA', handle: 'alphacoin', vol: 500000, liqUsd: 60000});
 const tiny = await makeCoin('TINY', [], Array.from({length: 3}, rand), 3600 * 3); Object.assign(tiny, {symbol: 'TINY', handle: 'tinycoin', vol: 800000, liqUsd: 900});
 const listed = [...coins, delta, tiny];
+// OCTA lives only on pump.fun's curve (not on DexScreener): Octo has to find it
+const octa = await makeCoin('OCTA', [], Array.from({length: 8}, rand), 3600); Object.assign(octa, {symbol: 'OCTA', handle: 'octacoin'});
+const pumpFeed = [
+  {mint: octa.mint, symbol: 'OCTA', name: 'Octa', usd_market_cap: 30000, ath_market_cap: 35000, created_timestamp: Date.now() - 3600e3, real_sol_reserves: 51e9, reply_count: 40, twitter: 'https://x.com/octacoin', website: 'https://octa.fun', creator: rand(), complete: false},
+  {mint: rand(), symbol: 'SPAM', name: 'Spam', usd_market_cap: 4000, ath_market_cap: 9000, created_timestamp: Date.now() - 600e3, real_sol_reserves: 2e9, reply_count: 0, creator: rand(), complete: false},
+];
 
 /* ---------- fake services ---------- */
 const PAGE_CAP = 4;
@@ -118,6 +134,10 @@ async function fakeFetch(url, opts = {}){
     }
     return json({content: [{type: 'tool_use', name: tool, input: {headline: 'Cabal ran ALPHA, BETA and GAMMA', body: 'Test recap body.'}}], usage: {}});
   }
+  if(url.startsWith('https://frontend-api-v3.pump.fun/coins')){
+    assert.equal(opts.headers?.origin, 'https://pump.fun');
+    return json(url.includes('offset=0&') ? pumpFeed : []);
+  }
   if(url.startsWith('https://api.fxtwitter.com/')){
     const h = url.split('/').pop();
     return json({code: 200, user: {screen_name: h, followers: 4200, tweets: 85, description: 'the official ' + h, joined: new Date(Date.now() - 3 * 86400e3).toUTCString()}});
@@ -136,7 +156,7 @@ const statePath = join(dir, 'agent.json');
 const cfgPath = join(dir, 'config.json');
 const cfg = JSON.parse(await readFile(join(HERE, '..', 'config.json'), 'utf8'));
 cfg.seedWatch = [{a: W1, label: 'whale1'}, {a: W2, label: 'whale2'}];
-cfg.scan.coinsPerRun = 3;
+cfg.scan.coinsPerRun = 4;
 await writeFile(cfgPath, JSON.stringify(cfg));
 const env = {HELIUS_API_KEY: 'test', ANTHROPIC_API_KEY: 'sk-test', TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '42'};
 const go = (task, e = env) => runAgent({task, env: e, fetchImpl: fakeFetch, statePath, configPath: cfgPath, gapMs: 0});
@@ -147,7 +167,8 @@ trade({owner: W1, mint: rand(), slot: 1, t: nowS() - 9000, solAmt: 1, tokAmt: 1e
 let s = await go('watch');
 assert.equal(s.watch.length, 2);
 assert.ok(s.watch.every(w => 'lastSig' in w));
-assert.equal(s.alerts.length, 0, 'no alerts on the first bookmark run');
+assert.equal(s.alerts.filter(a => a.kind !== 'octo').length, 0, 'no wallet alerts on the first bookmark run');
+assert.equal(s.alerts.filter(a => a.kind === 'octo').length, 1, 'Octo pings its strong grab once');
 
 // 2. both whales buy BETA -> two buy pings + overlap
 trade({owner: W1, mint: coins[1].mint, slot: 400000000, t: nowS() - 60, solAmt: 3, tokAmt: 1e6});
@@ -164,7 +185,7 @@ const before = s.alerts.length; s = await go('watch'); assert.equal(s.alerts.len
 sent.length = 0;
 s = await go('scan');
 const scanned = s.coins.filter(c => !c.skipped);
-assert.equal(scanned.length, 3, 'all three runners scanned: ' + JSON.stringify(s.log.slice(0, 8)));
+assert.equal(scanned.length, 4, 'three runners plus Octo\'s grab scanned: ' + JSON.stringify(s.log.slice(0, 8)));
 assert.ok(scanned.every(c => c.buyers.length >= 9), scanned.map(c => c.symbol + ' ' + c.buyers.length + ' ' + JSON.stringify(c.diag)).join('\n'));
 assert.equal(scanned.find(c => c.symbol === 'GAMMA').diag.addr, 'mint', 'thin curve history falls back to the mint');
 const top = s.analysis.clusters[0];
@@ -179,12 +200,19 @@ assert.match(sent.join('\n'), /CABAL/);
 const rows = s.desk.pipeline.rows;
 assert.equal(rows.find(r => r.symbol === 'TINY').free, 'thin_liquidity');
 assert.equal(rows.find(r => r.symbol === 'DELTA').social, 'recycled_account');
-assert.ok(rows.filter(r => r.chain).length === 3, JSON.stringify(rows));
+assert.ok(rows.filter(r => r.chain).length === 4, JSON.stringify(rows));
+// Octo found the curve-only coin, scored it, pinged it, and the desk scanned it
+const octaRow = rows.find(r => r.symbol === 'OCTA');
+assert.equal(octaRow?.src, 'octo'); assert.ok(octaRow.chain);
+assert.ok(s.octo.grabs.some(g => g.symbol === 'OCTA' && g.score > 0.72), JSON.stringify(s.octo.grabs));
+assert.ok(!s.octo.grabs.some(g => g.symbol === 'SPAM'));
+assert.ok(s.alerts.some(a => a.kind === 'octo' && /OCTA/.test(a.title)));
+assert.ok(s.desk.agents.octo.stats.touched >= 2);
 const va = scanned.find(c => c.symbol === 'ALPHA').desk;
 assert.ok(va.vet.facts.devPct > 0 && va.vet.facts.devPct < 0.05, 'dev bag read: ' + JSON.stringify(va.vet.facts));
 assert.equal(va.social.handle, 'alphacoin');
 assert.match(va.social.line, /4\.2K followers/);
-assert.ok(s.desk.verdicts.length === 3 && s.desk.verdicts.every(v => v.verdict === 'CABAL RUN'), 'cabal found this run must flag its coins: ' + JSON.stringify(s.desk.verdicts));
+assert.ok(s.desk.verdicts.length === 4 && s.desk.verdicts.filter(v => v.verdict === 'CABAL RUN').length === 3, 'cabal found this run must flag its coins: ' + JSON.stringify(s.desk.verdicts));
 assert.ok(rows.filter(r => r.chain === 'CABAL RUN').length === 3);
 assert.ok(['chief', 'scan', 'vet', 'social', 'hunt', 'watch'].every(a => s.desk.agents[a]), 'agent cards');
 assert.ok(s.desk.events.some(e => e.agent === 'social') && s.desk.events.some(e => e.agent === 'vet'));

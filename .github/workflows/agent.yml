@@ -3,7 +3,7 @@ name: First In agent
 on:
   schedule:
     - cron: '*/15 * * * *'   # wallet watch + Telegram commands
-    - cron: '7 */2 * * *'    # discover + scan runners + cabal hunt
+    - cron: '7 */3 * * *'    # discover + scan runners + cabal hunt
     - cron: '43 7 * * *'     # daily recap (08:43 Lagos)
   workflow_dispatch:
     inputs:
@@ -36,7 +36,7 @@ jobs:
         id: pick
         run: |
           case "${{ github.event.schedule }}" in
-            '7 */2 * * *') t=scan ;;
+            '7 */3 * * *') t=scan ;;
             '43 7 * * *')  t=recap ;;
             '')            t="${{ inputs.task || 'all' }}" ;;
             *)             t=watch ;;
