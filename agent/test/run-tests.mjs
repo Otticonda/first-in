@@ -47,6 +47,22 @@ function trade({owner, mint, bc, slot, t, solAmt, tokAmt, curveIndexed = true}){
   return s;
 }
 const nowS = () => Math.floor(Date.now() / 1000);
+/* several wallets buying inside ONE transaction: a bundled launch */
+function bundleTrade(owners, mint, bc, slot, t){
+  const keys = [], pre = [], post = [];
+  owners.forEach(o => { keys.push({pubkey: o, signer: true}); });
+  owners.forEach((o, i) => { const acct = acctOf(o, mint); keys.push({pubkey: acct, signer: false});
+    const k = o + '|' + mint, before = holdings.get(k) || 0; holdings.set(k, before + 2e7);
+    pre.push({accountIndex: owners.length + i, mint, owner: o, uiTokenAmount: {uiAmount: before}}); post.push({accountIndex: owners.length + i, mint, owner: o, uiTokenAmount: {uiAmount: before + 2e7}}); });
+  keys.push({pubkey: bc, signer: false});
+  const n = keys.length, bal = Array(n).fill(10e9);
+  const tx = {slot, blockTime: t, meta: {err: null, preBalances: bal, postBalances: bal.map((v, i) => i < owners.length ? v - 1e9 : i === n - 1 ? v + owners.length * 1e9 : v), preTokenBalances: pre, postTokenBalances: post},
+    transaction: {message: {accountKeys: keys}}};
+  const s = {signature: newSig(), slot, blockTime: t, err: null};
+  txs.set(s.signature, tx);
+  for(const a of [...owners, mint, bc]) addSig(a, s);
+  owners.forEach(o => addSig(acctOf(o, mint), s));
+}
 
 async function makeCoin(sym, cabal, extraBuyers, launchAgo, {curveLight = false} = {}){
   const mint = rand().slice(0, 40) + 'pump';
@@ -75,7 +91,11 @@ coins.forEach((c, i) => { c.symbol = c.sym; c.handle = c.sym.toLowerCase() + 'co
 // DELTA reuses ALPHA's X handle (recycled account), TINY has no liquidity: both must die before any credits are spent
 const delta = await makeCoin('DELTA', [], Array.from({length: 3}, rand), 3600 * 3); Object.assign(delta, {symbol: 'DELTA', handle: 'alphacoin', vol: 500000, liqUsd: 60000});
 const tiny = await makeCoin('TINY', [], Array.from({length: 3}, rand), 3600 * 3); Object.assign(tiny, {symbol: 'TINY', handle: 'tinycoin', vol: 800000, liqUsd: 900});
-const listed = [...coins, delta, tiny];
+// BNDL looks like the best runner on the tape, but 8 wallets bought inside its launch transaction
+const bndl = await makeCoin('BNDL', [], Array.from({length: 4}, rand), 3600 * 2);
+bundleTrade(Array.from({length: 8}, rand), bndl.mint, bndl.bc, 300000000, nowS() - 7000);
+Object.assign(bndl, {symbol: 'BNDL', handle: 'bndlcoin', vol: 2000000, liqUsd: 90000});
+const listed = [...coins, delta, tiny, bndl];
 // OCTA lives only on pump.fun's curve (not on DexScreener): Octo has to find it
 const octa = await makeCoin('OCTA', [], Array.from({length: 8}, rand), 3600); Object.assign(octa, {symbol: 'OCTA', handle: 'octacoin'});
 // OCTB is only reachable through the backup routes
@@ -184,7 +204,8 @@ const statePath = join(dir, 'agent.json');
 const cfgPath = join(dir, 'config.json');
 const cfg = JSON.parse(await readFile(join(HERE, '..', 'config.json'), 'utf8'));
 cfg.seedWatch = [{a: W1, label: 'whale1'}, {a: W2, label: 'whale2'}];
-cfg.scan.coinsPerRun = 4;
+cfg.scan.coinsPerRun = 5;
+cfg.desk.sweep.launch.perHour = 50;
 await writeFile(cfgPath, JSON.stringify(cfg));
 const env = {HELIUS_API_KEY: 'test', ANTHROPIC_API_KEY: 'sk-test', TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '42'};
 const go = (task, e = env) => runAgent({task, env: e, fetchImpl: fakeFetch, statePath, configPath: cfgPath, gapMs: 0});
@@ -214,13 +235,16 @@ assert.equal(s.alerts.filter(a => a.kind === 'buy').length, 2);
 assert.equal(s.alerts.filter(a => a.kind === 'overlap').length, 1);
 assert.match(sent.join('\n'), /Overlap: 2 watched wallets in \$BETA/);
 // a third run with nothing new doesn't repeat alerts
-const before = s.alerts.length; s = await go('watch'); assert.equal(s.alerts.length, before, 'picks are not re-pinged within 6h: ' + JSON.stringify(s.alerts.slice(0, 3).map(a => a.title)));
+{ const seenTitles = new Set(s.alerts.map(a => a.title)); const before = s.alerts.length; s = await go('watch');
+  const added = s.alerts.slice(0, s.alerts.length - before);
+  assert.ok(added.every(a => !seenTitles.has(a.title)), 'nothing is re-pinged: ' + JSON.stringify(added.map(a => a.title)));
+  assert.ok(added.every(a => a.kind === 'pick'), 'only new picks can appear on a quiet pass'); }
 
 // 3. scan + cabal hunt with Claude judging
 sent.length = 0;
 s = await go('scan');
 const scanned = s.coins.filter(c => !c.skipped);
-assert.equal(scanned.length, 4, 'three runners plus Octo\'s grab scanned: ' + JSON.stringify(s.log.slice(0, 8)));
+assert.equal(scanned.length, 5, 'four runners plus Octo\'s grab scanned: ' + JSON.stringify(s.log.slice(0, 8)));
 assert.ok(scanned.every(c => c.buyers.length >= 9), scanned.map(c => c.symbol + ' ' + c.buyers.length + ' ' + JSON.stringify(c.diag)).join('\n'));
 assert.equal(scanned.find(c => c.symbol === 'GAMMA').diag.addr, 'mint', 'thin curve history falls back to the mint');
 const top = s.analysis.clusters[0];
@@ -247,7 +271,7 @@ const va = scanned.find(c => c.symbol === 'ALPHA').desk;
 assert.ok(va.vet.facts.devPct > 0 && va.vet.facts.devPct < 0.05, 'dev bag read: ' + JSON.stringify(va.vet.facts));
 assert.equal(va.social.handle, 'alphacoin');
 assert.match(va.social.line, /4\.2K followers/);
-assert.ok(s.desk.verdicts.length === 4 && s.desk.verdicts.filter(v => v.verdict === 'CABAL RUN').length === 3, 'cabal found this run must flag its coins: ' + JSON.stringify(s.desk.verdicts));
+assert.ok(s.desk.verdicts.length === 5 && s.desk.verdicts.filter(v => v.verdict === 'CABAL RUN').length === 3 && s.desk.verdicts.find(v => v.symbol === 'BNDL').verdict === 'BUNDLED', 'cabal found this run must flag its coins: ' + JSON.stringify(s.desk.verdicts));
 assert.ok(s.desk.radar.coins.filter(r => r.verdict === 'CABAL RUN' && r.deep).length === 3, 'deep scan updates the radar: ' + JSON.stringify(s.desk.radar.coins.map(r => [r.symbol, r.verdict])));
 // picks the deep scan proved wrong are withdrawn, and say so
 const withdrawn = s.desk.picks.filter(p => p.status === 'withdrawn');
@@ -256,7 +280,7 @@ assert.match(sent.join('\n'), /Chief withdraws/);
 assert.ok(['chief', 'scan', 'vet', 'social', 'hunt', 'watch'].every(a => s.desk.agents[a]), 'agent cards');
 assert.ok(s.desk.events.some(e => e.agent === 'social') && s.desk.events.some(e => e.agent === 'vet'));
 assert.match(sent.join('\n'), /🧑‍⚖️/);
-const cabalProfit = scanned[0].buyers.find(b => b.owner === cabal[0]).pos;
+const cabalProfit = scanned.find(c => c.symbol === 'ALPHA').buyers.find(b => b.owner === cabal[0]).pos;
 assert.equal(cabalProfit.status, 'sold'); assert.ok(Math.abs(cabalProfit.pnl - 7) < 1e-6, 'pnl 9 - 2 = 7 SOL, got ' + cabalProfit.pnl);
 const judgeCalls = claudeCalls.length;
 
@@ -329,6 +353,15 @@ assert.equal(s.octo.ok, false); assert.match(s.octo.error, /403/);
   s = await go('auto');
   assert.equal(largestCalls, after1, 'holder checks are reused inside 15 minutes');
   assert.ok(s.desk.radar.swept >= 1, 'the sweep still ranks every runner');
+}
+
+// 11. a bundled launch never becomes a pick, however strong it looks
+{
+  const r = s.desk.radar.coins.find(x => x.symbol === 'BNDL');
+  const L = s.desk.launch[bndl.mint];
+  assert.ok(L && L.buyers?.length, 'BNDL got a launch check: ' + JSON.stringify(L));
+  assert.ok(!s.desk.picks.some(p => p.symbol === 'BNDL'), 'BNDL is not a pick: ' + JSON.stringify(s.desk.picks.map(p => p.symbol)));
+  assert.ok(!r || r.verdict === 'BUNDLED', 'radar calls it BUNDLED: ' + JSON.stringify(r));
 }
 
 if(process.env.STATE_OUT) await writeFile(process.env.STATE_OUT, await readFile(statePath));

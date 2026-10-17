@@ -263,8 +263,8 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
   }
 
   /* First N buyers of a coin and every one of their positions. Same output shape the site stores. */
-  async function scanCoin(mint, N, {meta, maxPagesPump = 600, maxPagesOther = 250} = {}){
-    const sym = meta?.symbol || short(mint);
+  /* Who bought at launch: curve history first, the mint's own history when the curve is thin. */
+  async function launchBuyers(mint, N, {maxPagesPump = 600, maxPagesOther = 250} = {}){
     const bc = await bondingCurveOf(mint);
     const probe = await rpc('getSignaturesForAddress', [bc, {limit:1}]);
     const viaPump = probe.length > 0;
@@ -275,6 +275,13 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
       if(!m.skipped && (r.skipped || m.buyers.length > r.buyers.length || (m.buyers.length === r.buyers.length && m.diag.total > r.diag.total))){ m.diag.curveTried = {...r.diag}; r = m; }
       else r.diag.mintTried = {...m.diag};
     }
+    return {...r, bc, viaPump};
+  }
+
+  async function scanCoin(mint, N, {meta, maxPagesPump = 600, maxPagesOther = 250} = {}){
+    const sym = meta?.symbol || short(mint);
+    const r = await launchBuyers(mint, N, {maxPagesPump, maxPagesOther});
+    const {bc, viaPump} = r;
     const diag = r.diag;
     if(r.skipped) return {mint, symbol: sym, name: meta?.name||'', skipped: r.skipped, at: Date.now(), diag};
     const {buyers, dev, createSlot, createTime} = r;
@@ -294,7 +301,7 @@ export function createSolana({rpcUrl, fetchImpl = fetch, gapMs = 115, log = () =
   }
 
   return {
-    rpc, pool, getTx, names, stats, dexPrices, curvePrice, scanCoin, positionFor,
+    rpc, pool, getTx, names, stats, launchBuyers, dexPrices, curvePrice, scanCoin, positionFor,
     walletBuys: (tx, w) => walletBuys(tx, w, solUsd),
     get credits(){ return credits; },
     get solUsd(){ return solUsd; },

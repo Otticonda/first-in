@@ -58,7 +58,13 @@
       "pick_score": 0.6,
       "maxPicks": 2,
       "everyMinutes": 2,
-      "vetTtlMinutes": 15
+      "vetTtlMinutes": 15,
+      "launch": {
+        "buyers": 15,
+        "perHour": 4,
+        "creditBudget": 120,
+        "maxPages": 60
+      }
     }
   },
   "cabal": {

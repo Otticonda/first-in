@@ -12,12 +12,12 @@ export function momentum(c){
   const pressure = trades ? c.buys24 / trades : 0.5;
   const turnover = c.mcap ? c.vol24 / c.mcap : 0;
   const value = 0.4 * clamp((pressure - 0.45) / 0.25) + 0.35 * clamp(((c.change1h || 0) + 10) / 40) + 0.25 * clamp(turnover / 3);
-  const facts = [];
-  if(c.change24) facts.push(`${c.change24 > 0 ? '+' : ''}${Math.round(c.change24)}% in 24h on ${usd(c.vol24)} volume`);
-  if(c.change1h) facts.push(`${c.change1h > 0 ? '+' : ''}${Math.round(c.change1h)}% in the last hour`);
-  if(trades) facts.push(pressure >= 0.5 ? `buyers outnumber sellers ${(c.buys24 / Math.max(1, c.sells24)).toFixed(1)} to 1` : `sellers outnumber buyers ${(c.sells24 / Math.max(1, c.buys24)).toFixed(1)} to 1`);
+  const facts = [], against = [];
+  if(c.change24) (c.change24 > 0 ? facts : against).push(`${c.change24 > 0 ? '+' : ''}${Math.round(c.change24)}% in 24h on ${usd(c.vol24)} volume`);
+  if(c.change1h) (c.change1h > 0 ? facts : against).push(`${c.change1h > 0 ? '+' : ''}${Math.round(c.change1h)}% in the last hour`);
+  if(trades) (pressure >= 0.5 ? facts : against).push(pressure >= 0.5 ? `buyers outnumber sellers ${(c.buys24 / Math.max(1, c.sells24)).toFixed(1)} to 1` : `sellers outnumber buyers ${(c.sells24 / Math.max(1, c.buys24)).toFixed(1)} to 1`);
   if(turnover >= 1) facts.push(`its whole market cap traded ${turnover.toFixed(1)}x today`);
-  return {value: Math.round(value * 100) / 100, facts, pressure};
+  return {value: Math.round(value * 100) / 100, facts, against, pressure};
 }
 function octoFacts(c){
   const f = [`${pct(c.progress || 0)} through the bonding curve`];
@@ -44,6 +44,8 @@ export function buildThesis(c, {social, vet, mom, deep} = {}){
   // chain
   if(f.top10Pct != null) (f.top10Pct <= 0.2 ? good : f.top10Pct >= 0.35 ? risks : []).push(`top 10 wallets hold ${pct(f.top10Pct)} of supply`);
   if(f.devPct != null) (f.devPct < 0.01 ? good : f.devPct >= 0.03 ? risks : []).push(f.devPct < 0.01 ? 'dev wallet holds under 1%' : `dev still holds ${(f.devPct * 100).toFixed(1)}%`);
+  if(f.launchRead && (f.bundledShare || 0) < 0.2 && (f.sniperShare || 0) < 0.4) good.push(`clean launch: of the first ${f.launchRead} buyers, ${pct(f.bundledShare || 0)} bundled and ${pct(f.sniperShare || 0)} sniped the first block`);
+  if(f.launchUnverified) risks.push('launch too deep to read on a free RPC, so bundles and snipers are unchecked');
   if(f.bundledShare >= 0.2) risks.push(`${pct(f.bundledShare)} of the first buyers came in bundled launch transactions`);
   if(f.sniperShare >= 0.4) risks.push(`${pct(f.sniperShare)} of the first buyers sniped the launch block`);
   if(f.cabalWallets) risks.push(`${f.cabalWallets} known cabal wallets were early`);
@@ -64,7 +66,7 @@ export function buildThesis(c, {social, vet, mom, deep} = {}){
   }
   if(c.src === 'octo' && c.progress >= 0.85) risks.push('close to graduation, where curve coins often dump on migration');
   if(c.liq && c.mcap && c.liq / c.mcap < 0.08) risks.push(`thin liquidity: ${usd(c.liq)} against ${usd(c.mcap)} market cap`);
-  if(mom?.pressure != null && mom.pressure < 0.5) risks.push('more sellers than buyers today');
+  risks.push(...(mom?.against || []));
 
   // what would prove it wrong
   if(c.ath && c.mcap) wrong.push(`market cap falls under ${usd(c.ath * 0.6)} (60% of its high)`);

@@ -27,7 +27,7 @@ const freshState = () => ({
   runs: {}, watch: [], buys: [], overlaps: {}, coins: [], queue: [],
   analysis: {coinsAnalyzed: 0, bots: [], repeaters: [], clusters: []},
   judged: [], alerts: [], recaps: [], log: [],
-  desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null, radar: null, picks: [], socialCache: {}, vetCache: {}, killed: {}, pinged: {}},
+  desk: {events: [], verdicts: [], pipeline: null, handles: {}, agents: {}, thresholds: null, radar: null, picks: [], socialCache: {}, vetCache: {}, launch: {}, killed: {}, pinged: {}},
   octo: {at: 0, reqs: 0, touched: 0, grabbed: 0, inked: 0, ok: true, error: '', grabs: [], pinged: {}, creators: {}},
   credits: {month: '', used: 0, day: '', today: 0, lastRun: 0},
 });
@@ -433,6 +433,18 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
   }
 
   /* the filter: free_kill -> social_kill -> chain (scan + vet) -> verdict. The order is the whole point. */
+  /* fold a launch check (first buyers) into a coin's vet: bundles and snipers */
+  async function withLaunch(vet, mint){
+    const L = state.desk.launch[mint];
+    if(!L) return vet;
+    if(L.skipped) return {...vet, facts: {...vet.facts, launchUnverified: L.skipped}};
+    const lv = await vetChain({mint, supply: 0, buyers: L.buyers}, async () => ({value: []}));
+    const flags = {...vet.flags}; if(lv.flags.bundled_launch) flags.bundled_launch = lv.flags.bundled_launch; if(lv.flags.sniped_launch) flags.sniped_launch = lv.flags.sniped_launch;
+    const bits = [`bundled ${Math.round(lv.facts.bundledShare * 100)}%`, `snipers ${Math.round(lv.facts.sniperShare * 100)}%`];
+    return {...vet, flags, facts: {...vet.facts, bundledShare: lv.facts.bundledShare, sniperShare: lv.facts.sniperShare, launchRead: L.buyers.length},
+      line: [vet.line, ...bits].filter(Boolean).join(' · ')};
+  }
+
   /* SWEEP, every wake-up: every live runner gets a quick pass. free kill -> social -> holders -> verdict -> score */
   async function sweepJob(){
     const sw = cfg.desk.sweep, soft = cfg.desk.soft;
@@ -460,6 +472,7 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
           p.vet = await vetChain({mint: p.c.mint, supply}, sol.rpc);
           state.desk.vetCache[p.c.mint] = {t: now, vet: p.vet};
         }
+        p.vet = await withLaunch(p.vet, p.c.mint);
         const deep = state.coins.find(c => c.mint === p.c.mint && c.desk?.verdict);
         const chief = deep ? {verdict: deep.desk.verdict, reasons: deep.desk.reasons} : chiefVerdict({social: p.social, vet: p.vet}, soft);
         p.verdict = chief.verdict;
@@ -475,8 +488,35 @@ export async function runAgent({task = 'watch', env = process.env, fetchImpl = f
     sol.budget(null);
     radar.sort((a, b) => b.score - a.score);
 
+    // LAUNCH CHECK, before anything becomes a pick: read its first buyers for bundles and snipers.
+    // Cheap (no position reads) and capped per hour; a coin whose launch can't be read waits.
+    const lc = sw.launch, hourAgo = now - 3600e3;
+    let checks = Object.values(state.desk.launch).filter(x => x.t > hourAgo).length;
+    const fresh = [];
+    for(const r of radar.filter(x => x.verdict === 'CLEAN' && x.score >= sw.pick_score && !x.deep)){
+      if(fresh.length >= sw.maxPicks) break;
+      if(!state.desk.launch[r.mint]){
+        if(checks >= lc.perHour || creditsLeft() < lc.creditBudget) continue;
+        checks++;
+        sol.budget(lc.creditBudget);
+        try {
+          const lb = await sol.launchBuyers(r.mint, lc.buyers, {maxPagesPump: lc.maxPages, maxPagesOther: lc.maxPages});
+          state.desk.launch[r.mint] = lb.skipped ? {t: now, skipped: lb.skipped} : {t: now, buyers: lb.buyers.map(b => ({owner: b.owner, slotDelta: b.slotDelta, sig: b.sig}))};
+        } catch(e){ state.desk.launch[r.mint] = {t: now, skipped: e instanceof BudgetError ? 'launch read ran over its credit budget' : e.message}; }
+        sol.budget(null);
+        const p = r._p;
+        p.vet = await withLaunch(p.vet, r.mint);
+        const chief = chiefVerdict({social: p.social, vet: p.vet}, soft);
+        Object.assign(r, {verdict: chief.verdict, reasons: chief.reasons, safety: safety(p.social, p.vet), vet: p.vet.line});
+        r.score = deskScore(r.momentum, r.safety);
+        deskEvent('vet', `$${r.symbol} launch: ${state.desk.launch[r.mint].skipped ? 'too deep to read' : p.vet.line}`);
+      }
+      if(r.verdict === 'CLEAN' && r.score >= sw.pick_score) fresh.push(r);
+    }
+    radar.sort((a, b) => b.score - a.score);
+    for(const [m, x] of Object.entries(state.desk.launch)) if(now - x.t > 2 * DAY) delete state.desk.launch[m];
+
     // CHIEF'S PICKS: clean coins with the best score get a written thesis
-    const fresh = radar.filter(r => r.verdict === 'CLEAN' && r.score >= sw.pick_score).slice(0, sw.maxPicks);
     for(const r of fresh){
       const p = r._p, known = state.desk.picks.find(x => x.mint === r.mint && x.status === 'live');
       let thesis = buildThesis({...p.c, symbol: r.symbol}, {social: p.social, vet: p.vet, mom: p.mom});
